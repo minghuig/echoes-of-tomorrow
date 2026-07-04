@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  determinism-test:
+    name: Determinism test
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.6.3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run determinism test
+        run: godot --headless --path . --script res://tests/test_determinism.gd
+
+  web-export:
+    name: Web export
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.6.3
+    env:
+      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+      ITCH_USER: ${{ secrets.ITCH_USER }}
+      ITCH_GAME: ${{ secrets.ITCH_GAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Export web build
+        run: |
+          mkdir -p build/web
+          godot --headless --path . --export-release "Web" build/web/index.html
+
+      - name: Upload web build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+
+      # Deploys only when the three itch.io secrets are configured;
+      # skips silently otherwise instead of failing the build.
+      - name: Push to itch.io
+        if: ${{ env.BUTLER_API_KEY != '' && env.ITCH_USER != '' && env.ITCH_GAME != '' }}
+        run: butler push build/web "$ITCH_USER/$ITCH_GAME:html5"
