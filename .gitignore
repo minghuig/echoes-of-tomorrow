@@ -1,0 +1,14 @@
+# Godot 4
+.godot/
+*.import
+
+# Exports
+build/
+export/
+*.pck
+*.zip
+
+# OS / editor cruft
+.DS_Store
+*.tmp
+*~
