@@ -1,9 +1,11 @@
 extends Node2D
-## M2 view: owns a SimCore, translates raw input into one Command per physics
+## M3 view: owns a SimCore, translates raw input into one Command per physics
 ## tick, and draws the resulting SimState with flat shapes. Read-only — never
 ## writes sim fields. Also owns the run lifecycle (reset, seed selection,
-## command-log recording), the persistent meta layer, and the meta win state
-## (lifetime fragment target -> credits) — all outside the sim.
+## command-log recording), the persistent meta layer, the meta win state
+## (lifetime fragment target -> credits), and the ghost echo: a second
+## SimCore re-running the previous run's (seed, command_log) in lockstep
+## with live play — all outside the sim.
 
 const SimCoreScript := preload("res://sim/sim_core.gd")
 const SimStateScript := preload("res://sim/sim_state.gd")
@@ -57,6 +59,8 @@ const COLOR_PROJECTILE := Color("ffd75e")
 const COLOR_BLOCK := Color("7a68c8")
 const COLOR_CLEAR_TEXT := Color("aef2f4")
 const COLOR_HUD_TEXT := Color("8fa3ad")
+const COLOR_GHOST := Color(0.247, 0.816, 0.831, 0.35)
+const COLOR_GHOST_PROJECTILE := Color(0.247, 0.816, 0.831, 0.22)
 
 var _core: SimCoreScript
 var _meta: RunMetaScript
@@ -67,6 +71,12 @@ var _clear_ticks: int = 0
 var _mode: Mode = Mode.PLAYING
 var _credits_ticks: int = 0
 var _win_fragment_target: int = 0
+
+# Ghost echo of the previous run: a parallel SimCore fed the recorded
+# command log, one tick per live tick. Never touches the live sim.
+var _ghost_core: SimCoreScript = null
+var _ghost_log: Array[SimCommand] = []
+var _ghost_tick: int = 0
 
 
 func _ready() -> void:
@@ -91,6 +101,7 @@ func _physics_process(_delta: float) -> void:
 	var cmd := _build_command()
 	_command_log.append(cmd)
 	_core.step(cmd)
+	_step_ghost()
 
 	if _core.state.blocks.is_empty():
 		_clear_ticks += 1
@@ -137,6 +148,33 @@ func _start_run() -> void:
 	_clear_ticks = 0
 	_core = SimCoreScript.new()
 	_core.setup(_run_seed)
+	_spawn_ghost()
+
+
+## Re-run the previous run verbatim as a translucent echo: a fresh SimCore
+## seeded with the recorded seed, stepped one recorded command per live tick.
+func _spawn_ghost() -> void:
+	_ghost_core = null
+	_ghost_log = []
+	_ghost_tick = 0
+	if _last_run == null or _last_run.command_log.is_empty():
+		return
+	_ghost_core = SimCoreScript.new()
+	_ghost_core.setup(_last_run.seed_value)
+	_ghost_log = _last_run.command_log
+
+
+## Advance the echo in lockstep with live play. When its log runs out the
+## echo has caught up to where the previous run ended, and it derezzes.
+func _step_ghost() -> void:
+	if _ghost_core == null or _ghost_tick >= _ghost_log.size():
+		return
+	_ghost_core.step(_ghost_log[_ghost_tick])
+	_ghost_tick += 1
+
+
+func _ghost_active() -> bool:
+	return _ghost_core != null and _ghost_tick < _ghost_log.size()
 
 
 ## Translate raw input into this tick's Command (the only path into the sim).
@@ -175,6 +213,9 @@ func _draw() -> void:
 		draw_rect(Rect2(b.pos, b.size), COLOR_BLOCK.lerp(COLOR_BG, 1.0 - strength))
 		draw_rect(Rect2(b.pos, b.size), COLOR_BLOCK, false, 2.0)
 
+	if _ghost_active():
+		_draw_ghost()
+
 	for p: SimStateScript.Projectile in state.projectiles:
 		draw_circle(p.pos, _core.projectile_radius, COLOR_PROJECTILE)
 
@@ -183,6 +224,25 @@ func _draw() -> void:
 
 	if state.blocks.is_empty():
 		_draw_clear_banner(state)
+
+
+## The previous run's echo: its capsule, aim tick, and projectiles, all
+## translucent. Its world state (blocks) is deliberately not drawn — only
+## the live run's arena is authoritative on screen.
+func _draw_ghost() -> void:
+	var state: SimStateScript = _ghost_core.state
+
+	for p: SimStateScript.Projectile in state.projectiles:
+		draw_circle(p.pos, _ghost_core.projectile_radius, COLOR_GHOST_PROJECTILE)
+
+	var pos := state.player_pos
+	var r := _ghost_core.player_radius
+	var half_gap := r * 0.45
+	draw_circle(pos + Vector2(0.0, -half_gap), r, COLOR_GHOST)
+	draw_circle(pos + Vector2(0.0, half_gap), r, COLOR_GHOST)
+	draw_rect(Rect2(pos - Vector2(r, half_gap), Vector2(r * 2.0, half_gap * 2.0)), COLOR_GHOST)
+	var aim := state.player_aim
+	draw_line(pos + aim * (r + 4.0), pos + aim * (r + 14.0), COLOR_GHOST, 3.0)
 
 
 func _draw_player(state: SimStateScript) -> void:
@@ -208,6 +268,13 @@ func _draw_hud(state: SimStateScript) -> void:
 	draw_string(
 		font, Vector2(16.0, 28.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18,
 		COLOR_HUD_TEXT)
+
+	if _ghost_active():
+		var echo := "ECHO ACTIVE"
+		var width := font.get_string_size(echo, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
+		draw_string(
+			font, Vector2(state.arena_size.x - width - 16.0, 28.0), echo,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(COLOR_GHOST, 0.9))
 
 
 ## Scroll the credits up from the bottom, stop with the block centered, then

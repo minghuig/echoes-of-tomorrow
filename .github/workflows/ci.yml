@@ -19,6 +19,9 @@ jobs:
       - name: Run determinism test
         run: godot --headless --path . --script res://tests/test_determinism.gd
 
+      - name: Run ghost replay test
+        run: godot --headless --path . --script res://tests/test_ghost_replay.gd
+
   web-export:
     name: Web export
     runs-on: ubuntu-latest
