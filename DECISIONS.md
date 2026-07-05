@@ -10,3 +10,4 @@ Architectural choices, dated, with one-line rationale. Newest at the bottom.
 - **2026-07-04 — Codename ASSET-7.** Working title per VISION.md.
 - **2026-07-04 — Engine version pinned to 4.6.3-stable.** Local binary and CI image (`barichello/godot-ci:4.6.3`) must match so exports and tests behave identically.
 - **2026-07-04 — Cross-file sim references use `preload()` consts, not bare `class_name` lookups.** Global class resolution needs the editor's `.godot/` cache; preloads keep headless/CI runs working from a cold checkout.
+- **2026-07-05 — Renamed to Echoes of Tomorrow.** ASSET-7 retired as the project title; "ASSET 7" survives only as the player AI's in-fiction designation (the credits stinger in VISION.md).
