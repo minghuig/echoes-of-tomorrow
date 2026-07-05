@@ -14,6 +14,12 @@ godot --headless --path . --script res://tests/test_determinism.gd
 
 Runs a scripted ~600-tick command log twice from the same seed and compares state hashes every 60 ticks plus the final serialized state byte-for-byte. Exits 0 on PASS, 1 on FAIL. Run it after any change under `sim/`.
 
+```sh
+godot --headless --path . --script res://tests/test_reveal_discipline.gd
+```
+
+Lints all player-facing text (`content/strings.json` plus project metadata) against the reveal-discipline vocabulary rules in `VISION.md` — pre-reveal strings must never say AI, sim, process, or training. Run it after changing any display string.
+
 ## Current milestone
 
 **M0** — capsule moves, aims at the mouse, fires, dodges; blocks break; destroying all blocks shows "CLEAR".

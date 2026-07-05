@@ -24,6 +24,9 @@ Why: ghosts, rewind, replays, RTS zoom-out, and the hacking mode are all "re-run
   `godot --headless --path . --script res://tests/test_determinism.gd`
   (runs a scripted command log twice from the same seed; compares state hashes every 60 ticks; nonzero exit on mismatch)
 - After changing anything under `sim/`, run it locally — don't rely on CI to catch it.
+- Reveal-discipline lint must also pass:
+  `godot --headless --path . --script res://tests/test_reveal_discipline.gd`
+  (player-facing text lives in `content/strings.json`, never hardcoded in scripts; pre-L3 strings and project metadata must not say AI/sim/process/training — see VISION.md "Reveal discipline". Sections prefixed `post_l3` are exempt.)
 - Verify the project still boots headless: `godot --headless --path . --quit`.
 
 ## Directory map

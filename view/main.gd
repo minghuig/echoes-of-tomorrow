@@ -10,6 +10,8 @@ const SimCommand := preload("res://sim/command.gd")
 const RUN_SEED: int = 7
 const STICK_AIM_DEADZONE: float = 0.35
 
+const STRINGS_PATH := "res://content/strings.json"
+
 const COLOR_BG := Color("14161c")
 const COLOR_BORDER := Color("3fd0d4")
 const COLOR_PLAYER := Color("e8e6e3")
@@ -19,11 +21,18 @@ const COLOR_BLOCK := Color("7a68c8")
 const COLOR_CLEAR_TEXT := Color("aef2f4")
 
 var _core: SimCoreScript
+var _ui_strings: Dictionary
 
 
 func _ready() -> void:
 	_core = SimCoreScript.new()
 	_core.setup(RUN_SEED)
+	# Player-facing text lives in content/strings.json so the reveal-discipline
+	# lint (tests/test_reveal_discipline.gd) can enforce VISION.md's vocabulary
+	# rules — never hardcode display strings in scripts.
+	var strings: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string(STRINGS_PATH))
+	_ui_strings = strings["ui"]
 
 
 func _physics_process(_delta: float) -> void:
@@ -89,7 +98,7 @@ func _draw_player(state: SimStateScript) -> void:
 
 func _draw_clear_banner(state: SimStateScript) -> void:
 	var font := ThemeDB.fallback_font
-	var text := "CLEAR"
+	var text: String = _ui_strings["clear_banner"]
 	var font_size := 96
 	var size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size)
 	var pos := (state.arena_size - size) * 0.5 + Vector2(0.0, size.y * 0.8)
