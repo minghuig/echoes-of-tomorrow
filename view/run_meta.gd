@@ -11,6 +11,8 @@ const SAVE_PATH := "user://save.json"
 var run_count: int = 0
 ## Fragments banked from completed runs.
 var total_fragments: int = 0
+## Times the fragment target has been reached (credits roll on the first).
+var wins: int = 0
 
 
 func load_from_disk() -> void:
@@ -20,6 +22,7 @@ func load_from_disk() -> void:
 	if parsed is Dictionary:
 		run_count = int(parsed.get("run_count", 0))
 		total_fragments = int(parsed.get("total_fragments", 0))
+		wins = int(parsed.get("wins", 0))
 
 
 func save_to_disk() -> void:
@@ -30,4 +33,5 @@ func save_to_disk() -> void:
 	file.store_string(JSON.stringify({
 		"run_count": run_count,
 		"total_fragments": total_fragments,
+		"wins": wins,
 	}))
