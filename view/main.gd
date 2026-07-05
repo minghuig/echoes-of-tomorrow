@@ -27,6 +27,7 @@ const COLOR_AIM := Color("3fd0d4")
 const COLOR_PROJECTILE := Color("ffd75e")
 const COLOR_BLOCK := Color("7a68c8")
 const COLOR_CLEAR_TEXT := Color("aef2f4")
+const COLOR_HUD_TEXT := Color("8fa3ad")
 
 var _core: SimCoreScript
 var _meta: RunMetaScript
@@ -118,6 +119,7 @@ func _draw() -> void:
 		draw_circle(p.pos, _core.projectile_radius, COLOR_PROJECTILE)
 
 	_draw_player(state)
+	_draw_hud(state)
 
 	if state.blocks.is_empty():
 		_draw_clear_banner(state)
@@ -136,6 +138,15 @@ func _draw_player(state: SimStateScript) -> void:
 	# Aim tick.
 	var aim := state.player_aim
 	draw_line(pos + aim * (r + 4.0), pos + aim * (r + 14.0), COLOR_AIM, 3.0)
+
+
+func _draw_hud(state: SimStateScript) -> void:
+	var font := ThemeDB.fallback_font
+	var text := "RUN %d   FRAGMENTS %d   LIFETIME %d" % [
+		_meta.run_count, state.fragments, _meta.total_fragments + state.fragments]
+	draw_string(
+		font, Vector2(16.0, 28.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18,
+		COLOR_HUD_TEXT)
 
 
 func _draw_clear_banner(state: SimStateScript) -> void:
