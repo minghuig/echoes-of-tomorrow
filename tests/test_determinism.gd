@@ -65,9 +65,20 @@ func _build_command_log() -> Array[SimCommand]:
 	return commands
 
 
+## A representative sentience-tree loadout: determinism must hold with
+## modifiers applied.
+const LOADOUT := {
+	"max_hp_add": 60,
+	"fire_cooldown_scale": 0.72,
+	"dodge_cooldown_scale": 0.8,
+	"dodge_iframe_add": 4,
+	"kill_fragment_add": 1,
+}
+
+
 func _run(commands: Array[SimCommand]) -> Dictionary:
 	var core := SimCoreScript.new()
-	core.setup(SEED)
+	core.setup(SEED, LOADOUT)
 	var hashes: Array[int] = []
 	for i in commands.size():
 		core.step(commands[i])

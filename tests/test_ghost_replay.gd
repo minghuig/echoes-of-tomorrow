@@ -16,17 +16,25 @@ const LIVE_SEED: int = 9001
 const TICK_COUNT: int = 600
 const HASH_INTERVAL: int = 60
 
+## The recorded run's loadout — part of the replay contract. The ghost must
+## be set up with the same loadout or the replay diverges.
+const RECORD_LOADOUT := {
+	"max_hp_add": 30,
+	"fire_cooldown_scale": 0.85,
+	"kill_fragment_add": 1,
+}
+
 
 func _initialize() -> void:
 	# Original run: play it once, keep its log and checkpoint hashes.
 	var recorded_log := _build_command_log(0.031, 12)
-	var original := _run_solo(RECORD_SEED, recorded_log)
+	var original := _run_solo(RECORD_SEED, RECORD_LOADOUT, recorded_log)
 
 	# Ghost replay: re-run the recorded log through a fresh core while a
-	# different live run (different seed, different inputs) steps beside it.
+	# different live run (different seed, loadout, and inputs) steps beside it.
 	var live_log := _build_command_log(0.047, 8)
 	var ghost_core := SimCoreScript.new()
-	ghost_core.setup(RECORD_SEED)
+	ghost_core.setup(RECORD_SEED, RECORD_LOADOUT)
 	var live_core := SimCoreScript.new()
 	live_core.setup(LIVE_SEED)
 
@@ -80,9 +88,11 @@ func _build_command_log(aim_step: float, fire_window: int) -> Array[SimCommand]:
 	return commands
 
 
-func _run_solo(seed_value: int, commands: Array[SimCommand]) -> Dictionary:
+func _run_solo(
+	seed_value: int, loadout: Dictionary, commands: Array[SimCommand]
+) -> Dictionary:
 	var core := SimCoreScript.new()
-	core.setup(seed_value)
+	core.setup(seed_value, loadout)
 	var hashes: Array[int] = []
 	for i in commands.size():
 		core.step(commands[i])

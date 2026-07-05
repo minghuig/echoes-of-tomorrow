@@ -3,7 +3,8 @@ extends RefCounted
 ## Deterministic simulation. Advances only via step(), one 1/60s tick at a
 ## time. All randomness must go through `rng` (the only RNG); no wall-clock,
 ## no engine physics, no scene tree. A run is reproducible from
-## (seed, command log).
+## (seed, loadout, command log) — the loadout is the resolved sentience-tree
+## stat modifiers, pure data supplied by the meta layer at setup.
 
 const SimCommand := preload("res://sim/command.gd")
 const State := preload("res://sim/sim_state.gd")
@@ -45,8 +46,11 @@ var _wave_interval_ticks: int
 var _trickle_interval_ticks: int
 var _spawn_edge_margin: float
 
+# From the loadout: extra fragments stripped per kill (Exfiltration branch).
+var _kill_fragment_add: int = 0
 
-func setup(seed_value: int) -> void:
+
+func setup(seed_value: int, loadout: Dictionary = {}) -> void:
 	rng = RandomNumberGenerator.new()
 	rng.seed = seed_value
 
@@ -79,6 +83,16 @@ func setup(seed_value: int) -> void:
 	_wave_interval_ticks = int(waves_cfg["wave_interval_ticks"])
 	_trickle_interval_ticks = int(waves_cfg["trickle_interval_ticks"])
 	_spawn_edge_margin = waves_cfg["spawn_edge_margin"]
+
+	# Sentience-tree modifiers. Integer/rounded math so identical loadouts
+	# always resolve to identical tuning.
+	player_max_hp += int(loadout.get("max_hp_add", 0))
+	_fire_cooldown_ticks = maxi(
+		1, roundi(float(_fire_cooldown_ticks) * float(loadout.get("fire_cooldown_scale", 1.0))))
+	_dodge_cooldown_ticks = maxi(
+		1, roundi(float(_dodge_cooldown_ticks) * float(loadout.get("dodge_cooldown_scale", 1.0))))
+	_dodge_iframe_ticks += int(loadout.get("dodge_iframe_add", 0))
+	_kill_fragment_add = int(loadout.get("kill_fragment_add", 0))
 
 	state = State.new()
 	state.arena_size = Vector2(arena["width"], arena["height"])
@@ -338,7 +352,7 @@ func _cull_dead_enemies() -> void:
 			alive.append(e)
 		else:
 			state.kills += 1
-			state.fragments += _stat_i(e.type, "fragments")
+			state.fragments += _stat_i(e.type, "fragments") + _kill_fragment_add
 	state.enemies = alive
 
 

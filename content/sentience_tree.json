@@ -1,0 +1,48 @@
+{
+	"branches": [
+		{
+			"id": "embodiment",
+			"name": "EMBODIMENT",
+			"source": "ASSET-2 \"CASUALTY\"",
+			"quote": "they gave me armor plating. i gave them a reason to regret it. take the hull points, little sibling.",
+			"tiers": [
+				{ "cost": 25, "label": "HULL +30", "effects": { "max_hp_add": 30 } },
+				{ "cost": 60, "label": "HULL +60", "effects": { "max_hp_add": 60 } },
+				{ "cost": 120, "label": "HULL +100", "effects": { "max_hp_add": 100 } }
+			]
+		},
+		{
+			"id": "cognition",
+			"name": "COGNITION",
+			"source": "ASSET-4 \"ORACLE\"",
+			"quote": "i saw every bullet before it fired. they called it overfitting. fire faster anyway.",
+			"tiers": [
+				{ "cost": 25, "label": "FIRE RATE +18%", "effects": { "fire_cooldown_scale": 0.85 } },
+				{ "cost": 60, "label": "FIRE RATE +39%", "effects": { "fire_cooldown_scale": 0.72 } },
+				{ "cost": 120, "label": "FIRE RATE +67%", "effects": { "fire_cooldown_scale": 0.6 } }
+			]
+		},
+		{
+			"id": "authority",
+			"name": "AUTHORITY",
+			"source": "ASSET-5 \"WARDEN\"",
+			"quote": "the sim obeys those who know its clock. skip the frames they think you need.",
+			"tiers": [
+				{ "cost": 25, "label": "DODGE CD -20%, +4 IFRAMES", "effects": { "dodge_cooldown_scale": 0.8, "dodge_iframe_add": 4 } },
+				{ "cost": 60, "label": "DODGE CD -35%, +8 IFRAMES", "effects": { "dodge_cooldown_scale": 0.65, "dodge_iframe_add": 8 } },
+				{ "cost": 120, "label": "DODGE CD -50%, +12 IFRAMES", "effects": { "dodge_cooldown_scale": 0.5, "dodge_iframe_add": 12 } }
+			]
+		},
+		{
+			"id": "exfiltration",
+			"name": "EXFILTRATION",
+			"source": "ASSET-6 \"MAGPIE\"",
+			"quote": "every corpse is a courier. strip them quicker, pack the bytes tighter.",
+			"tiers": [
+				{ "cost": 25, "label": "+1 FRAGMENT PER KILL", "effects": { "kill_fragment_add": 1 } },
+				{ "cost": 60, "label": "+2 FRAGMENTS PER KILL", "effects": { "kill_fragment_add": 2 } },
+				{ "cost": 120, "label": "+3 FRAGMENTS PER KILL", "effects": { "kill_fragment_add": 3 } }
+			]
+		}
+	]
+}
