@@ -1,5 +1,10 @@
 {
 	"ui": {
-		"clear_banner": "CLEAR"
+		"hud_mission": "SHORE ASSAULT // FIRST WAVE",
+		"hud_sortie": "SORTIE 001   T+%s",
+		"hud_targets": "TARGETS %d / %d",
+		"hud_integrity": "INTEGRITY %d%%",
+		"clear_banner": "CLEAR",
+		"clear_sub": "ALL TARGETS NEUTRALIZED — AWAITING EVALUATION"
 	}
 }

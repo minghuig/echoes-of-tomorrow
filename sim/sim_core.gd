@@ -17,19 +17,20 @@ const LAYOUT_PATH := "res://content/block_layout.json"
 var state: State
 var rng: RandomNumberGenerator
 
-# Tuning values, loaded from content/tuning.json in setup().
+# Tuning values, loaded from content/tuning.json in setup(). Public fields
+# are read by the view (radii for shapes, ticks/hp for cosmetic indicators).
 var player_radius: float
 var _player_speed: float
 var _player_max_hp: int
 var _dodge_impulse: float
 var _dodge_decay: float
-var _dodge_cooldown_ticks: int
+var dodge_cooldown_ticks: int
 var projectile_radius: float
 var _proj_speed: float
 var _proj_ttl_ticks: int
 var _fire_cooldown_ticks: int
 var _proj_spawn_offset: float
-var _block_hp: int
+var block_max_hp: int
 
 
 func setup(seed_value: int) -> void:
@@ -47,13 +48,13 @@ func setup(seed_value: int) -> void:
 	_player_max_hp = int(player["max_hp"])
 	_dodge_impulse = player["dodge_impulse"]
 	_dodge_decay = player["dodge_decay"]
-	_dodge_cooldown_ticks = int(player["dodge_cooldown_ticks"])
+	dodge_cooldown_ticks = int(player["dodge_cooldown_ticks"])
 	projectile_radius = projectile["radius"]
 	_proj_speed = projectile["speed"]
 	_proj_ttl_ticks = int(projectile["ttl_ticks"])
 	_fire_cooldown_ticks = int(projectile["fire_cooldown_ticks"])
 	_proj_spawn_offset = projectile["spawn_offset"]
-	_block_hp = int(block["hp"])
+	block_max_hp = int(block["hp"])
 
 	state = State.new()
 	state.arena_size = Vector2(arena["width"], arena["height"])
@@ -65,7 +66,7 @@ func setup(seed_value: int) -> void:
 		var b := State.Block.new()
 		b.pos = Vector2(entry["x"], entry["y"])
 		b.size = Vector2(entry["w"], entry["h"])
-		b.hp = _block_hp
+		b.hp = block_max_hp
 		state.blocks.append(b)
 
 
@@ -89,7 +90,7 @@ func _step_player(cmd: SimCommand) -> void:
 	if cmd.dodge and state.dodge_cooldown == 0:
 		var dir := move if move != Vector2.ZERO else state.player_aim
 		state.dodge_vel = dir.normalized() * _dodge_impulse
-		state.dodge_cooldown = _dodge_cooldown_ticks
+		state.dodge_cooldown = dodge_cooldown_ticks
 
 	state.player_vel = move * _player_speed + state.dodge_vel
 	state.player_pos += state.player_vel * DT
