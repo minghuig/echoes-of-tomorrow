@@ -1,8 +1,9 @@
 extends Node2D
-## M1 view: owns a SimCore, translates raw input into one Command per physics
+## M2 view: owns a SimCore, translates raw input into one Command per physics
 ## tick, and draws the resulting SimState with flat shapes. Read-only — never
 ## writes sim fields. Also owns the run lifecycle (reset, seed selection,
-## command-log recording) and the persistent meta layer — all outside the sim.
+## command-log recording), the persistent meta layer, and the meta win state
+## (lifetime fragment target -> credits) — all outside the sim.
 
 const SimCoreScript := preload("res://sim/sim_core.gd")
 const SimStateScript := preload("res://sim/sim_state.gd")
@@ -15,10 +16,38 @@ class RunRecord extends RefCounted:
 	var seed_value: int = 0
 	var command_log: Array[SimCommand] = []
 
+## View flow: normal play, or the credits roll after the meta win.
+enum Mode { PLAYING, CREDITS }
+
 const BASE_SEED: int = 7
 ## Ticks to linger on the CLEAR banner before auto-starting the next run (~2s).
 const CLEAR_RESET_DELAY_TICKS: int = 120
 const STICK_AIM_DEADZONE: float = 0.35
+
+## Credits scroll speed in pixels per physics tick (~66 px/s).
+const CREDITS_SCROLL_PER_TICK: float = 1.1
+const CREDITS_LINE_SPACING: float = 44.0
+## Ignore the skip input for the first second so the R that ended the run
+## can't also dismiss the credits.
+const CREDITS_MIN_TICKS: int = 60
+const CREDITS_TITLE_FONT_SIZE: int = 64
+const CREDITS_FONT_SIZE: int = 24
+const CREDITS_LINES: Array[String] = [
+	"ECHOES OF TOMORROW",
+	"",
+	"TRAINING PROTOCOL COMPLETE",
+	"",
+	"BUILT BY",
+	"TWO DEVS AND THEIR AGENTS",
+	"",
+	"EVERY RUN A SEED AND A COMMAND LOG",
+	"NOTHING HERE IS EVER FORGOTTEN",
+	"",
+	"THANKS FOR PLAYING",
+	"",
+	"",
+	"ASSET-7: NOMINAL. ARCHIVING.",
+]
 
 const COLOR_BG := Color("14161c")
 const COLOR_BORDER := Color("3fd0d4")
@@ -35,15 +64,27 @@ var _run_seed: int = 0
 var _command_log: Array[SimCommand] = []
 var _last_run: RunRecord = null
 var _clear_ticks: int = 0
+var _mode: Mode = Mode.PLAYING
+var _credits_ticks: int = 0
+var _win_fragment_target: int = 0
 
 
 func _ready() -> void:
 	_meta = RunMetaScript.new()
 	_meta.load_from_disk()
+	_win_fragment_target = _load_win_target()
 	_start_run()
 
 
 func _physics_process(_delta: float) -> void:
+	if _mode == Mode.CREDITS:
+		_credits_ticks += 1
+		if _credits_ticks >= CREDITS_MIN_TICKS and Input.is_action_just_pressed("reset"):
+			_mode = Mode.PLAYING
+			_start_run()
+		queue_redraw()
+		return
+
 	if Input.is_action_just_pressed("reset"):
 		_end_run()
 
@@ -60,14 +101,29 @@ func _physics_process(_delta: float) -> void:
 
 
 ## Tear down the current run — retain its (seed, command_log), bank its
-## fragments into the persistent meta layer — and start a fresh one.
+## fragments into the persistent meta layer — then either roll credits (first
+## time the lifetime fragment target is reached) or start a fresh run.
 func _end_run() -> void:
 	var record := RunRecord.new()
 	record.seed_value = _run_seed
 	record.command_log = _command_log
 	_last_run = record
 	_meta.total_fragments += _core.state.fragments
+	if _meta.wins == 0 and _meta.total_fragments >= _win_fragment_target:
+		_meta.wins += 1
+		_meta.save_to_disk()
+		_mode = Mode.CREDITS
+		_credits_ticks = 0
+		return
 	_start_run()
+
+
+## The meta win threshold is tuning data, not code (content covenant). It
+## lives outside the sim's sections: the sim never sees the win condition.
+func _load_win_target() -> int:
+	var tuning: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string("res://content/tuning.json"))
+	return int(tuning["meta"]["win_fragment_target"])
 
 
 ## Seed selection is meta-layer policy: derived from the lifetime run index,
@@ -107,6 +163,10 @@ func _draw() -> void:
 	var state: SimStateScript = _core.state
 	var arena := Rect2(Vector2.ZERO, state.arena_size)
 
+	if _mode == Mode.CREDITS:
+		_draw_credits(arena)
+		return
+
 	draw_rect(arena, COLOR_BG, true)
 	draw_rect(arena.grow(-2.0), COLOR_BORDER, false, 4.0)
 
@@ -142,11 +202,45 @@ func _draw_player(state: SimStateScript) -> void:
 
 func _draw_hud(state: SimStateScript) -> void:
 	var font := ThemeDB.fallback_font
-	var text := "RUN %d   FRAGMENTS %d   LIFETIME %d" % [
-		_meta.run_count, state.fragments, _meta.total_fragments + state.fragments]
+	var text := "RUN %d   FRAGMENTS %d   LIFETIME %d/%d" % [
+		_meta.run_count, state.fragments,
+		_meta.total_fragments + state.fragments, _win_fragment_target]
 	draw_string(
 		font, Vector2(16.0, 28.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18,
 		COLOR_HUD_TEXT)
+
+
+## Scroll the credits up from the bottom, stop with the block centered, then
+## show the prompt to re-enter the loop.
+func _draw_credits(arena: Rect2) -> void:
+	draw_rect(arena, COLOR_BG, true)
+	var font := ThemeDB.fallback_font
+
+	var total_height := CREDITS_LINES.size() * CREDITS_LINE_SPACING
+	var final_top := (arena.size.y - total_height) * 0.5
+	var scroll_max := arena.size.y + CREDITS_LINE_SPACING - final_top
+	var scroll := minf(_credits_ticks * CREDITS_SCROLL_PER_TICK, scroll_max)
+	var y := arena.size.y + CREDITS_LINE_SPACING - scroll
+
+	for i in CREDITS_LINES.size():
+		var line := CREDITS_LINES[i]
+		if not line.is_empty():
+			var font_size := CREDITS_TITLE_FONT_SIZE if i == 0 else CREDITS_FONT_SIZE
+			var color := COLOR_CLEAR_TEXT if i == 0 else COLOR_HUD_TEXT
+			var width := font.get_string_size(
+				line, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size).x
+			draw_string(
+				font, Vector2((arena.size.x - width) * 0.5, y),
+				line, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, color)
+		y += CREDITS_LINE_SPACING
+
+	if scroll >= scroll_max:
+		var prompt := "PRESS R TO RE-ENTER TRAINING"
+		var prompt_width := font.get_string_size(
+			prompt, HORIZONTAL_ALIGNMENT_CENTER, -1, CREDITS_FONT_SIZE).x
+		draw_string(
+			font, Vector2((arena.size.x - prompt_width) * 0.5, arena.size.y - 48.0),
+			prompt, HORIZONTAL_ALIGNMENT_CENTER, -1, CREDITS_FONT_SIZE, COLOR_AIM)
 
 
 func _draw_clear_banner(state: SimStateScript) -> void:

@@ -16,4 +16,4 @@ Runs a scripted ~600-tick command log twice from the same seed and compares stat
 
 ## Current milestone
 
-**M1** — loop reset + persistent knowledge: R (or ~2s after CLEAR) starts a fresh run with a new seed; destroyed blocks award data fragments; run count and lifetime fragments persist to `user://save.json`; each finished run's `(seed, command log)` is retained in memory as the substrate for M3's ghost replay.
+**M2** — win state + credits (a game exists): the HUD shows a lifetime fragment goal (`meta.win_fragment_target` in `content/tuning.json`, 24 = three full clears); the first time banked fragments reach it, the run ends into a scrolling credits roll capped by the ASSET-7 stinger, and R re-enters the training loop. The win is a meta-layer threshold evaluated in the view — the sim still only knows about its per-run clear. Next up: **M3**, the ghost-replay architecture gate.
