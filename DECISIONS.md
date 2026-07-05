@@ -10,3 +10,6 @@ Architectural choices, dated, with one-line rationale. Newest at the bottom.
 - **2026-07-04 — Codename ASSET-7.** Working title per VISION.md.
 - **2026-07-04 — Engine version pinned to 4.6.3-stable.** Local binary and CI image (`barichello/godot-ci:4.6.3`) must match so exports and tests behave identically.
 - **2026-07-04 — Cross-file sim references use `preload()` consts, not bare `class_name` lookups.** Global class resolution needs the editor's `.godot/` cache; preloads keep headless/CI runs working from a cold checkout.
+- **2026-07-05 — Juice comes from state diffing, not sim events.** The view detects hits/kills/shots/dodges by diffing successive SimStates, so the sim stays event-free and any command source (live play, ghost, replay) gets identical presentation for free.
+- **2026-07-05 — Hit-stop = view skips `step()` calls.** Freeze frames drop whole input ticks instead of touching sim time, so determinism (`seed + command log`) is unaffected.
+- **2026-07-05 — Glow is layered additive draws, not WorldEnvironment.** The gl_compatibility renderer (web export target) has no 2D HDR glow; stacked translucent shapes plus an additive-blend FX layer read the same and export everywhere.
