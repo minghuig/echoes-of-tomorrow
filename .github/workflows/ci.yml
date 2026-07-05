@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   determinism-test:
@@ -29,6 +31,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # The godot-ci image ships export templates in /root, but Actions
+      # containers run with HOME=/github/home — move them where Godot looks.
+      - name: Install export templates
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates
+          mv /root/.local/share/godot/export_templates/4.6.3.stable \
+            ~/.local/share/godot/export_templates/4.6.3.stable
 
       - name: Export web build
         run: |

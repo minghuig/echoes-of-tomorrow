@@ -1,13 +1,23 @@
 extends Node2D
-## M0 view: owns a SimCore, translates raw input into one Command per physics
+## M1 view: owns a SimCore, translates raw input into one Command per physics
 ## tick, and draws the resulting SimState with flat shapes. Read-only — never
-## writes sim fields.
+## writes sim fields. Also owns the run lifecycle (reset, seed selection,
+## command-log recording) and the persistent meta layer — all outside the sim.
 
 const SimCoreScript := preload("res://sim/sim_core.gd")
 const SimStateScript := preload("res://sim/sim_state.gd")
 const SimCommand := preload("res://sim/command.gd")
+const RunMetaScript := preload("res://view/run_meta.gd")
 
-const RUN_SEED: int = 7
+## A finished run, kept in memory as the data substrate for M3 ghost replay.
+## No replay rendering yet — milestone discipline.
+class RunRecord extends RefCounted:
+	var seed_value: int = 0
+	var command_log: Array[SimCommand] = []
+
+const BASE_SEED: int = 7
+## Ticks to linger on the CLEAR banner before auto-starting the next run (~2s).
+const CLEAR_RESET_DELAY_TICKS: int = 120
 const STICK_AIM_DEADZONE: float = 0.35
 
 const COLOR_BG := Color("14161c")
@@ -17,18 +27,60 @@ const COLOR_AIM := Color("3fd0d4")
 const COLOR_PROJECTILE := Color("ffd75e")
 const COLOR_BLOCK := Color("7a68c8")
 const COLOR_CLEAR_TEXT := Color("aef2f4")
+const COLOR_HUD_TEXT := Color("8fa3ad")
 
 var _core: SimCoreScript
+var _meta: RunMetaScript
+var _run_seed: int = 0
+var _command_log: Array[SimCommand] = []
+var _last_run: RunRecord = null
+var _clear_ticks: int = 0
 
 
 func _ready() -> void:
-	_core = SimCoreScript.new()
-	_core.setup(RUN_SEED)
+	_meta = RunMetaScript.new()
+	_meta.load_from_disk()
+	_start_run()
 
 
 func _physics_process(_delta: float) -> void:
-	_core.step(_build_command())
+	if Input.is_action_just_pressed("reset"):
+		_end_run()
+
+	var cmd := _build_command()
+	_command_log.append(cmd)
+	_core.step(cmd)
+
+	if _core.state.blocks.is_empty():
+		_clear_ticks += 1
+		if _clear_ticks >= CLEAR_RESET_DELAY_TICKS:
+			_end_run()
+
 	queue_redraw()
+
+
+## Tear down the current run — retain its (seed, command_log), bank its
+## fragments into the persistent meta layer — and start a fresh one.
+func _end_run() -> void:
+	var record := RunRecord.new()
+	record.seed_value = _run_seed
+	record.command_log = _command_log
+	_last_run = record
+	_meta.total_fragments += _core.state.fragments
+	_start_run()
+
+
+## Seed selection is meta-layer policy: derived from the lifetime run index,
+## never from inside the sim. Each run stays reproducible from
+## (_run_seed, _command_log).
+func _start_run() -> void:
+	_meta.run_count += 1
+	_meta.save_to_disk()
+	_run_seed = BASE_SEED + _meta.run_count
+	_command_log = []
+	_clear_ticks = 0
+	_core = SimCoreScript.new()
+	_core.setup(_run_seed)
 
 
 ## Translate raw input into this tick's Command (the only path into the sim).
@@ -67,6 +119,7 @@ func _draw() -> void:
 		draw_circle(p.pos, _core.projectile_radius, COLOR_PROJECTILE)
 
 	_draw_player(state)
+	_draw_hud(state)
 
 	if state.blocks.is_empty():
 		_draw_clear_banner(state)
@@ -85,6 +138,15 @@ func _draw_player(state: SimStateScript) -> void:
 	# Aim tick.
 	var aim := state.player_aim
 	draw_line(pos + aim * (r + 4.0), pos + aim * (r + 14.0), COLOR_AIM, 3.0)
+
+
+func _draw_hud(state: SimStateScript) -> void:
+	var font := ThemeDB.fallback_font
+	var text := "RUN %d   FRAGMENTS %d   LIFETIME %d" % [
+		_meta.run_count, state.fragments, _meta.total_fragments + state.fragments]
+	draw_string(
+		font, Vector2(16.0, 28.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18,
+		COLOR_HUD_TEXT)
 
 
 func _draw_clear_banner(state: SimStateScript) -> void:
