@@ -23,6 +23,22 @@ static func clear_chime() -> AudioStreamWAV:
 	return _tone([660.0, 880.0, 1320.0], 0.45)
 
 
+static func enemy_hit() -> AudioStreamWAV:
+	return _tone([330.0], 0.04)
+
+
+static func enemy_die() -> AudioStreamWAV:
+	return _tone([196.0], 0.12)
+
+
+static func player_hurt() -> AudioStreamWAV:
+	return _tone([98.0], 0.25)
+
+
+static func wave_horn() -> AudioStreamWAV:
+	return _tone([262.0, 330.0], 0.3)
+
+
 ## Square wave with exponential decay; multiple frequencies play as equal
 ## sequential segments (a tiny arpeggio).
 static func _tone(freqs: Array, duration: float) -> AudioStreamWAV:

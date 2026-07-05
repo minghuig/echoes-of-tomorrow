@@ -11,7 +11,7 @@ const SimCoreScript := preload("res://sim/sim_core.gd")
 const SimCommand := preload("res://sim/command.gd")
 
 const SEED: int = 1337
-const TICK_COUNT: int = 600
+const TICK_COUNT: int = 900
 const HASH_INTERVAL: int = 60
 
 

@@ -1,5 +1,5 @@
 extends Node2D
-## M4 view: owns a SimCore, translates raw input into one Command per physics
+## M5 view: owns a SimCore, translates raw input into one Command per physics
 ## tick, and draws the resulting SimState with flat shapes. Read-only — never
 ## writes sim fields. Also owns the run lifecycle (reset, seed selection,
 ## command-log recording), the persistent meta layer, the meta win state
@@ -16,8 +16,7 @@ const SimCommand := preload("res://sim/command.gd")
 const RunMetaScript := preload("res://view/run_meta.gd")
 const SfxScript := preload("res://view/sfx.gd")
 
-## A finished run, kept in memory as the data substrate for M3 ghost replay.
-## No replay rendering yet — milestone discipline.
+## A finished run, kept in memory as the data substrate for ghost replay.
 class RunRecord extends RefCounted:
 	var seed_value: int = 0
 	var command_log: Array[SimCommand] = []
@@ -26,8 +25,6 @@ class RunRecord extends RefCounted:
 enum Mode { PLAYING, CREDITS }
 
 const BASE_SEED: int = 7
-## Ticks to linger on the CLEAR banner before auto-starting the next run (~2s).
-const CLEAR_RESET_DELAY_TICKS: int = 120
 const STICK_AIM_DEADZONE: float = 0.35
 
 ## Credits scroll speed in pixels per physics tick (~66 px/s).
@@ -56,35 +53,55 @@ const CREDITS_LINES: Array[String] = [
 ]
 
 const COLOR_BG := Color("14161c")
+const COLOR_SEA := Color("16283c")
+const COLOR_SURF := Color("2c4a66")
 const COLOR_BORDER := Color("3fd0d4")
 const COLOR_PLAYER := Color("e8e6e3")
 const COLOR_AIM := Color("3fd0d4")
 const COLOR_PROJECTILE := Color("ffd75e")
 const COLOR_BLOCK := Color("7a68c8")
+const COLOR_DRONE := Color("ff8c5a")
+const COLOR_INFANTRY := Color("e05e51")
+const COLOR_HEAVY := Color("a83a32")
+const COLOR_ENEMY_PROJECTILE := Color("ff5d4f")
 const COLOR_CLEAR_TEXT := Color("aef2f4")
 const COLOR_HUD_TEXT := Color("8fa3ad")
+const COLOR_HP_BAR := Color("6ee08a")
+const COLOR_HP_BACK := Color("2a2e38")
+const COLOR_HURT := Color(0.85, 0.15, 0.12, 1.0)
+const COLOR_DOWN_TEXT := Color("ff6f61")
 const COLOR_GHOST := Color(0.247, 0.816, 0.831, 0.35)
 const COLOR_GHOST_PROJECTILE := Color(0.247, 0.816, 0.831, 0.22)
 const COLOR_FLASH := Color(1.0, 1.0, 1.0, 0.55)
 const COLOR_POP := Color("b8a6ff")
 
+## The sea band enemies wade out of, in pixels from the top edge.
+const SEA_DEPTH: float = 110.0
+
 # Feel-pass tuning (view frames, not sim ticks — hit-stop frames skip the
 # view tick entirely, sim included, so logs stay aligned).
 const HITSTOP_HIT_FRAMES: int = 2
 const HITSTOP_DESTROY_FRAMES: int = 5
+const HITSTOP_KILL_FRAMES: int = 3
+const HITSTOP_HEAVY_KILL_FRAMES: int = 7
+const HITSTOP_DEATH_FRAMES: int = 20
 const SHAKE_HIT: float = 2.5
 const SHAKE_DESTROY: float = 7.0
-const SHAKE_CLEAR: float = 12.0
+const SHAKE_KILL: float = 4.0
+const SHAKE_HEAVY_KILL: float = 9.0
+const SHAKE_HURT: float = 8.0
+const SHAKE_DEATH: float = 14.0
 const SHAKE_DECAY: float = 0.85
 const FLASH_FRAMES: int = 8
 const POP_FRAMES: int = 14
+const HURT_FRAMES: int = 18
+const WAVE_BANNER_FRAMES: int = 110
 
 var _core: SimCoreScript
 var _meta: RunMetaScript
 var _run_seed: int = 0
 var _command_log: Array[SimCommand] = []
 var _last_run: RunRecord = null
-var _clear_ticks: int = 0
 var _mode: Mode = Mode.PLAYING
 var _credits_ticks: int = 0
 var _win_fragment_target: int = 0
@@ -103,10 +120,17 @@ var _shake_offset: Vector2 = Vector2.ZERO
 var _fx_rng := RandomNumberGenerator.new()
 var _flashes: Array[Dictionary] = []
 var _pops: Array[Dictionary] = []
+var _hurt_frames: int = 0
+var _wave_banner_frames: int = 0
+var _banner_wave: int = 0
 var _sfx_fire: AudioStreamPlayer
 var _sfx_hit: AudioStreamPlayer
 var _sfx_break: AudioStreamPlayer
 var _sfx_clear: AudioStreamPlayer
+var _sfx_enemy_hit: AudioStreamPlayer
+var _sfx_enemy_die: AudioStreamPlayer
+var _sfx_hurt: AudioStreamPlayer
+var _sfx_wave: AudioStreamPlayer
 
 
 func _ready() -> void:
@@ -114,10 +138,14 @@ func _ready() -> void:
 	_meta.load_from_disk()
 	_win_fragment_target = _load_win_target()
 	_fx_rng.randomize()
-	_sfx_fire = _make_sfx_player(SfxScript.fire_blip(), -14.0)
+	_sfx_fire = _make_sfx_player(SfxScript.fire_blip(), -16.0)
 	_sfx_hit = _make_sfx_player(SfxScript.block_hit(), -10.0)
 	_sfx_break = _make_sfx_player(SfxScript.block_break(), -6.0)
 	_sfx_clear = _make_sfx_player(SfxScript.clear_chime(), -6.0)
+	_sfx_enemy_hit = _make_sfx_player(SfxScript.enemy_hit(), -12.0)
+	_sfx_enemy_die = _make_sfx_player(SfxScript.enemy_die(), -8.0)
+	_sfx_hurt = _make_sfx_player(SfxScript.player_hurt(), -5.0)
+	_sfx_wave = _make_sfx_player(SfxScript.wave_horn(), -8.0)
 	_start_run()
 
 
@@ -144,25 +172,31 @@ func _physics_process(_delta: float) -> void:
 		queue_redraw()
 		return
 
+	# Down: the sim froze itself; hold on the death panel until redeploy.
+	if _core.state.player_down:
+		_decay_fx()
+		if Input.is_action_just_pressed("reset"):
+			_end_run()
+		queue_redraw()
+		return
+
 	if Input.is_action_just_pressed("reset"):
 		_end_run()
 
 	var pre_fire_cooldown := _core.state.fire_cooldown
+	var pre_hp := _core.state.player_hp
+	var pre_wave := _core.state.wave_index
 	var pre_blocks := _snapshot_blocks()
+	var pre_enemies := _snapshot_enemies()
 
 	var cmd := _build_command()
 	_command_log.append(cmd)
 	_core.step(cmd)
 	_step_ghost()
 
-	_emit_feel_events(cmd.fire and pre_fire_cooldown == 0, pre_blocks)
+	_emit_feel_events(
+		cmd.fire and pre_fire_cooldown == 0, pre_blocks, pre_enemies, pre_hp, pre_wave)
 	_decay_fx()
-
-	if _core.state.blocks.is_empty():
-		_clear_ticks += 1
-		if _clear_ticks >= CLEAR_RESET_DELAY_TICKS:
-			_end_run()
-
 	queue_redraw()
 
 
@@ -180,6 +214,7 @@ func _end_run() -> void:
 		_meta.save_to_disk()
 		_mode = Mode.CREDITS
 		_credits_ticks = 0
+		_sfx_clear.play()
 		return
 	_start_run()
 
@@ -200,80 +235,16 @@ func _start_run() -> void:
 	_meta.save_to_disk()
 	_run_seed = BASE_SEED + _meta.run_count
 	_command_log = []
-	_clear_ticks = 0
 	_hitstop_frames = 0
 	_shake = 0.0
 	_shake_offset = Vector2.ZERO
 	_flashes.clear()
 	_pops.clear()
+	_hurt_frames = 0
+	_wave_banner_frames = 0
 	_core = SimCoreScript.new()
 	_core.setup(_run_seed)
 	_spawn_ghost()
-
-
-## Compare block state across one sim step to spot hits and kills. Keyed by
-## position — blocks never move.
-func _snapshot_blocks() -> Dictionary:
-	var by_pos := {}
-	for b: SimStateScript.Block in _core.state.blocks:
-		by_pos[b.pos] = {"hp": b.hp, "size": b.size}
-	return by_pos
-
-
-## Turn this tick's sim delta into juice: hit-stop, shake, flashes, SFX.
-func _emit_feel_events(fired: bool, pre_blocks: Dictionary) -> void:
-	if fired:
-		_sfx_fire.play()
-
-	var now := {}
-	for b: SimStateScript.Block in _core.state.blocks:
-		now[b.pos] = b
-	var destroyed := 0
-	var damaged := 0
-	for pos: Vector2 in pre_blocks:
-		var prev: Dictionary = pre_blocks[pos]
-		var rect := Rect2(pos, prev["size"])
-		if not now.has(pos):
-			destroyed += 1
-			_pops.append({"rect": rect, "frames": POP_FRAMES})
-		elif (now[pos] as SimStateScript.Block).hp < int(prev["hp"]):
-			damaged += 1
-			_flashes.append({"rect": rect, "frames": FLASH_FRAMES})
-
-	if destroyed > 0:
-		_hitstop_frames = maxi(_hitstop_frames, HITSTOP_DESTROY_FRAMES)
-		_shake = maxf(_shake, SHAKE_DESTROY)
-		_sfx_break.play()
-	elif damaged > 0:
-		_hitstop_frames = maxi(_hitstop_frames, HITSTOP_HIT_FRAMES)
-		_shake = maxf(_shake, SHAKE_HIT)
-		_sfx_hit.play()
-
-	if destroyed > 0 and _core.state.blocks.is_empty():
-		_shake = maxf(_shake, SHAKE_CLEAR)
-		_sfx_clear.play()
-
-
-## Advance shake/flash/pop timers one view frame (runs during hit-stop too,
-## so the freeze still vibrates).
-func _decay_fx() -> void:
-	_shake *= SHAKE_DECAY
-	if _shake < 0.1:
-		_shake = 0.0
-		_shake_offset = Vector2.ZERO
-	else:
-		_shake_offset = Vector2(
-			_fx_rng.randf_range(-_shake, _shake),
-			_fx_rng.randf_range(-_shake, _shake))
-
-	for i in range(_flashes.size() - 1, -1, -1):
-		_flashes[i]["frames"] = int(_flashes[i]["frames"]) - 1
-		if int(_flashes[i]["frames"]) <= 0:
-			_flashes.remove_at(i)
-	for i in range(_pops.size() - 1, -1, -1):
-		_pops[i]["frames"] = int(_pops[i]["frames"]) - 1
-		if int(_pops[i]["frames"]) <= 0:
-			_pops.remove_at(i)
 
 
 ## Re-run the previous run verbatim as a translucent echo: a fresh SimCore
@@ -300,6 +271,125 @@ func _step_ghost() -> void:
 
 func _ghost_active() -> bool:
 	return _ghost_core != null and _ghost_tick < _ghost_log.size()
+
+
+## Compare block state across one sim step to spot hits and kills. Keyed by
+## position — blocks never move.
+func _snapshot_blocks() -> Dictionary:
+	var by_pos := {}
+	for b: SimStateScript.Block in _core.state.blocks:
+		by_pos[b.pos] = {"hp": b.hp, "size": b.size}
+	return by_pos
+
+
+## Enemies move, so key by object identity (refs persist across ticks).
+func _snapshot_enemies() -> Dictionary:
+	var by_ref := {}
+	for e: SimStateScript.Enemy in _core.state.enemies:
+		by_ref[e] = {"hp": e.hp, "pos": e.pos, "type": e.type}
+	return by_ref
+
+
+## Turn this tick's sim delta into juice: hit-stop, shake, flashes, SFX.
+func _emit_feel_events(
+	fired: bool, pre_blocks: Dictionary, pre_enemies: Dictionary,
+	pre_hp: int, pre_wave: int
+) -> void:
+	if fired:
+		_sfx_fire.play()
+
+	var now_blocks := {}
+	for b: SimStateScript.Block in _core.state.blocks:
+		now_blocks[b.pos] = b
+	var block_destroyed := 0
+	var block_damaged := 0
+	for pos: Vector2 in pre_blocks:
+		var prev: Dictionary = pre_blocks[pos]
+		var rect := Rect2(pos, prev["size"])
+		if not now_blocks.has(pos):
+			block_destroyed += 1
+			_pops.append({"rect": rect, "frames": POP_FRAMES})
+		elif (now_blocks[pos] as SimStateScript.Block).hp < int(prev["hp"]):
+			block_damaged += 1
+			_flashes.append({"rect": rect, "frames": FLASH_FRAMES})
+
+	var now_enemies := {}
+	for e: SimStateScript.Enemy in _core.state.enemies:
+		now_enemies[e] = true
+	var kills := 0
+	var heavy_kill := false
+	var enemy_hits := 0
+	for key in pre_enemies:
+		var e: SimStateScript.Enemy = key
+		var prev: Dictionary = pre_enemies[key]
+		var radius: float = _core.enemy_types[prev["type"]]["radius"]
+		var half := Vector2(radius, radius)
+		if not now_enemies.has(e):
+			kills += 1
+			heavy_kill = heavy_kill or String(prev["type"]) == "heavy"
+			_pops.append({"rect": Rect2(prev["pos"] - half, half * 2.0), "frames": POP_FRAMES})
+		elif e.hp < int(prev["hp"]):
+			enemy_hits += 1
+			_flashes.append(
+				{"rect": Rect2(e.pos - half * 0.8, half * 1.6), "frames": FLASH_FRAMES})
+
+	if block_destroyed > 0:
+		_hitstop_frames = maxi(_hitstop_frames, HITSTOP_DESTROY_FRAMES)
+		_shake = maxf(_shake, SHAKE_DESTROY)
+		_sfx_break.play()
+	elif block_damaged > 0:
+		_hitstop_frames = maxi(_hitstop_frames, HITSTOP_HIT_FRAMES)
+		_shake = maxf(_shake, SHAKE_HIT)
+		_sfx_hit.play()
+
+	if kills > 0:
+		_hitstop_frames = maxi(
+			_hitstop_frames,
+			HITSTOP_HEAVY_KILL_FRAMES if heavy_kill else HITSTOP_KILL_FRAMES)
+		_shake = maxf(_shake, SHAKE_HEAVY_KILL if heavy_kill else SHAKE_KILL)
+		_sfx_enemy_die.play()
+	elif enemy_hits > 0:
+		_sfx_enemy_hit.play()
+
+	if _core.state.player_hp < pre_hp:
+		_hurt_frames = HURT_FRAMES
+		_shake = maxf(_shake, SHAKE_HURT)
+		_sfx_hurt.play()
+		if _core.state.player_down:
+			_hitstop_frames = maxi(_hitstop_frames, HITSTOP_DEATH_FRAMES)
+			_shake = maxf(_shake, SHAKE_DEATH)
+
+	if _core.state.wave_index > pre_wave:
+		_banner_wave = _core.state.wave_index
+		_wave_banner_frames = WAVE_BANNER_FRAMES
+		_sfx_wave.play()
+
+
+## Advance shake/flash/pop timers one view frame (runs during hit-stop too,
+## so the freeze still vibrates).
+func _decay_fx() -> void:
+	_shake *= SHAKE_DECAY
+	if _shake < 0.1:
+		_shake = 0.0
+		_shake_offset = Vector2.ZERO
+	else:
+		_shake_offset = Vector2(
+			_fx_rng.randf_range(-_shake, _shake),
+			_fx_rng.randf_range(-_shake, _shake))
+
+	if _hurt_frames > 0:
+		_hurt_frames -= 1
+	if _wave_banner_frames > 0:
+		_wave_banner_frames -= 1
+
+	for i in range(_flashes.size() - 1, -1, -1):
+		_flashes[i]["frames"] = int(_flashes[i]["frames"]) - 1
+		if int(_flashes[i]["frames"]) <= 0:
+			_flashes.remove_at(i)
+	for i in range(_pops.size() - 1, -1, -1):
+		_pops[i]["frames"] = int(_pops[i]["frames"]) - 1
+		if int(_pops[i]["frames"]) <= 0:
+			_pops.remove_at(i)
 
 
 ## Translate raw input into this tick's Command (the only path into the sim).
@@ -332,11 +422,14 @@ func _draw() -> void:
 
 	# Background stays put; everything in the world shakes on top of it.
 	draw_rect(arena, COLOR_BG, true)
+	draw_rect(Rect2(0.0, 0.0, arena.size.x, SEA_DEPTH), COLOR_SEA, true)
+	draw_line(
+		Vector2(0.0, SEA_DEPTH), Vector2(arena.size.x, SEA_DEPTH), COLOR_SURF, 3.0)
 	draw_set_transform(_shake_offset)
 	draw_rect(arena.grow(-2.0), COLOR_BORDER, false, 4.0)
 
 	for b: SimStateScript.Block in state.blocks:
-		var strength := float(b.hp) / 3.0
+		var strength := float(b.hp) / 4.0
 		draw_rect(Rect2(b.pos, b.size), COLOR_BLOCK.lerp(COLOR_BG, 1.0 - strength))
 		draw_rect(Rect2(b.pos, b.size), COLOR_BLOCK, false, 2.0)
 
@@ -345,19 +438,55 @@ func _draw() -> void:
 	if _ghost_active():
 		_draw_ghost()
 
+	_draw_enemies(state)
+
 	for p: SimStateScript.Projectile in state.projectiles:
 		draw_circle(p.pos, _core.projectile_radius, COLOR_PROJECTILE)
+	for p: SimStateScript.Projectile in state.enemy_projectiles:
+		draw_circle(p.pos, _core.projectile_radius, COLOR_ENEMY_PROJECTILE)
 
 	_draw_player(state)
 	draw_set_transform(Vector2.ZERO)
+
+	if _hurt_frames > 0:
+		var hurt := COLOR_HURT
+		hurt.a = 0.28 * float(_hurt_frames) / float(HURT_FRAMES)
+		draw_rect(arena, hurt, true)
+
 	_draw_hud(state)
 
-	if state.blocks.is_empty():
-		_draw_clear_banner(state)
+	if _wave_banner_frames > 0:
+		_draw_wave_banner(state)
+	if state.player_down:
+		_draw_death_panel(state)
+
+
+func _draw_enemies(state: SimStateScript) -> void:
+	for e: SimStateScript.Enemy in state.enemies:
+		var stats: Dictionary = _core.enemy_types[e.type]
+		var radius: float = stats["radius"]
+		var max_hp := int(stats["hp"])
+		var strength := clampf(float(e.hp) / float(max_hp), 0.0, 1.0)
+		var toward := (state.player_pos - e.pos).normalized()
+		match e.type:
+			"drone":
+				draw_circle(e.pos, radius, COLOR_DRONE.lerp(COLOR_BG, (1.0 - strength) * 0.7))
+				draw_line(e.pos, e.pos + toward * (radius + 5.0), COLOR_DRONE, 2.0)
+			"infantry":
+				var half := Vector2(radius, radius)
+				draw_rect(
+					Rect2(e.pos - half, half * 2.0),
+					COLOR_INFANTRY.lerp(COLOR_BG, (1.0 - strength) * 0.7))
+				draw_rect(Rect2(e.pos - half, half * 2.0), COLOR_INFANTRY, false, 2.0)
+				draw_line(e.pos, e.pos + toward * (radius + 8.0), COLOR_INFANTRY, 3.0)
+			_:
+				draw_circle(e.pos, radius, COLOR_HEAVY.lerp(COLOR_BG, (1.0 - strength) * 0.7))
+				draw_arc(e.pos, radius, 0.0, TAU, 28, COLOR_HEAVY, 3.0)
+				draw_arc(e.pos, radius * 0.55, 0.0, TAU, 20, COLOR_HEAVY, 2.0)
 
 
 ## Damage flashes (white fill fading out) and destruction pops (an outline
-## expanding from the dead block's rect).
+## expanding from the dead thing's rect).
 func _draw_fx() -> void:
 	for flash: Dictionary in _flashes:
 		var t := float(flash["frames"]) / float(FLASH_FRAMES)
@@ -373,8 +502,8 @@ func _draw_fx() -> void:
 
 
 ## The previous run's echo: its capsule, aim tick, and projectiles, all
-## translucent. Its world state (blocks) is deliberately not drawn — only
-## the live run's arena is authoritative on screen.
+## translucent. Its world state (blocks, enemies) is deliberately not drawn —
+## only the live run's arena is authoritative on screen.
 func _draw_ghost() -> void:
 	var state: SimStateScript = _ghost_core.state
 
@@ -396,10 +525,15 @@ func _draw_player(state: SimStateScript) -> void:
 	var r := _core.player_radius
 	var half_gap := r * 0.45
 
+	# Flicker while invulnerable (dodge i-frames).
+	var body := COLOR_PLAYER
+	if state.iframe_ticks > 0 and (state.iframe_ticks / 2) % 2 == 0:
+		body.a = 0.45
+
 	# Capsule: two circles bridged by a rect.
-	draw_circle(pos + Vector2(0.0, -half_gap), r, COLOR_PLAYER)
-	draw_circle(pos + Vector2(0.0, half_gap), r, COLOR_PLAYER)
-	draw_rect(Rect2(pos - Vector2(r, half_gap), Vector2(r * 2.0, half_gap * 2.0)), COLOR_PLAYER)
+	draw_circle(pos + Vector2(0.0, -half_gap), r, body)
+	draw_circle(pos + Vector2(0.0, half_gap), r, body)
+	draw_rect(Rect2(pos - Vector2(r, half_gap), Vector2(r * 2.0, half_gap * 2.0)), body)
 
 	# Aim tick.
 	var aim := state.player_aim
@@ -408,12 +542,18 @@ func _draw_player(state: SimStateScript) -> void:
 
 func _draw_hud(state: SimStateScript) -> void:
 	var font := ThemeDB.fallback_font
-	var text := "RUN %d   FRAGMENTS %d   LIFETIME %d/%d" % [
-		_meta.run_count, state.fragments,
+	var text := "RUN %d   WAVE %d   KILLS %d   FRAGMENTS %d   LIFETIME %d/%d" % [
+		_meta.run_count, state.wave_index, state.kills, state.fragments,
 		_meta.total_fragments + state.fragments, _win_fragment_target]
 	draw_string(
 		font, Vector2(16.0, 28.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18,
 		COLOR_HUD_TEXT)
+
+	var bar := Rect2(16.0, 40.0, 220.0, 10.0)
+	draw_rect(bar, COLOR_HP_BACK)
+	var ratio := clampf(float(state.player_hp) / float(_core.player_max_hp), 0.0, 1.0)
+	if ratio > 0.0:
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * ratio, bar.size.y)), COLOR_HP_BAR)
 
 	if _ghost_active():
 		var echo := "ECHO ACTIVE"
@@ -421,6 +561,42 @@ func _draw_hud(state: SimStateScript) -> void:
 		draw_string(
 			font, Vector2(state.arena_size.x - width - 16.0, 28.0), echo,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(COLOR_GHOST, 0.9))
+
+
+func _draw_wave_banner(state: SimStateScript) -> void:
+	var font := ThemeDB.fallback_font
+	var text := "WAVE %d" % _banner_wave
+	var alpha := clampf(float(_wave_banner_frames) / 30.0, 0.0, 1.0)
+	var color := COLOR_CLEAR_TEXT
+	color.a = alpha
+	var size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, 48)
+	draw_string(
+		font, Vector2((state.arena_size.x - size.x) * 0.5, 150.0), text,
+		HORIZONTAL_ALIGNMENT_CENTER, -1, 48, color)
+
+
+func _draw_death_panel(state: SimStateScript) -> void:
+	var arena := Rect2(Vector2.ZERO, state.arena_size)
+	draw_rect(arena, Color(0.0, 0.0, 0.0, 0.55), true)
+	var font := ThemeDB.fallback_font
+
+	_draw_centered(font, "SIGNAL LOST", 250.0, 84, COLOR_DOWN_TEXT)
+	_draw_centered(
+		font, "ASSET-7 TERMINATED — PERFORMANCE LOGGED", 310.0, 24, COLOR_HUD_TEXT)
+	var seconds := state.tick / 60
+	var stats := "WAVE %d   KILLS %d   FRAGMENTS +%d   %d:%02d" % [
+		state.wave_index, state.kills, state.fragments, seconds / 60, seconds % 60]
+	_draw_centered(font, stats, 380.0, 30, COLOR_CLEAR_TEXT)
+	_draw_centered(font, "[R]  REDEPLOY", 470.0, 26, COLOR_AIM)
+
+
+func _draw_centered(
+	font: Font, text: String, y: float, font_size: int, color: Color
+) -> void:
+	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size).x
+	draw_string(
+		font, Vector2((_core.state.arena_size.x - width) * 0.5, y), text,
+		HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, color)
 
 
 ## Scroll the credits up from the bottom, stop with the block centered, then
@@ -454,13 +630,3 @@ func _draw_credits(arena: Rect2) -> void:
 		draw_string(
 			font, Vector2((arena.size.x - prompt_width) * 0.5, arena.size.y - 48.0),
 			prompt, HORIZONTAL_ALIGNMENT_CENTER, -1, CREDITS_FONT_SIZE, COLOR_AIM)
-
-
-func _draw_clear_banner(state: SimStateScript) -> void:
-	var font := ThemeDB.fallback_font
-	var text := "CLEAR"
-	var font_size := 96
-	var size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size)
-	var pos := (state.arena_size - size) * 0.5 + Vector2(0.0, size.y * 0.8)
-	draw_string(
-		font, pos, text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, COLOR_CLEAR_TEXT)
