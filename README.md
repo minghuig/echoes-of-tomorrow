@@ -16,4 +16,4 @@ Runs a scripted ~600-tick command log twice from the same seed and compares stat
 
 ## Current milestone
 
-**M3** — ghost replay (the architecture gate): every run records its `(seed, command log)`; the next run re-runs that record through a second SimCore stepped in lockstep with live play, rendered as a translucent cyan echo that derezzes when its log runs out. `tests/test_ghost_replay.gd` proves the replay is tick-for-tick identical (checkpoint hashes + final state bytes) while an unrelated live sim advances beside it. Next up: **M4**, the feel pass (hit-stop, shake).
+**M4** — feel pass: hit-stop on block hits and kills, screen shake, damage flashes, destruction pops, and procedurally synthesized SFX (`view/sfx.gd` — no audio assets). All of it is view-layer time and flavor: a hit-stop frame skips the whole view tick (no command recorded, no sim step), so command logs stay 1:1 with sim ticks and ghost replays are untouched. The prototype roadmap (M0–M4) is complete; the M3 architecture gate — a recorded run visibly replaying as a ghost — is passed and enforced by `tests/test_ghost_replay.gd`.
