@@ -1,18 +1,21 @@
 extends Node2D
 ## Screen-space overlay on its own CanvasLayer (unaffected by camera shake):
-## vignette, scanlines, rolling holo-refresh band, diegetic training-sim HUD,
-## and the animated CLEAR banner. Read-only over sim state.
+## vignette, scanlines, rolling holo-refresh band, diegetic field HUD, and the
+## animated CLEAR banner. Read-only over sim state.
 
 const SimCoreScript := preload("res://sim/sim_core.gd")
 
 const COLOR_HUD := Color("3fd0d4")
 const COLOR_CLEAR := Color("aef2f4")
 
-const CLEAR_TITLE := "SIMULATION CLEAR"
-const CLEAR_SUB := "ALL TARGETS NEUTRALIZED — AWAITING EVALUATION"
+# Display text comes from content/strings.json so the reveal-discipline lint
+# (tests/test_reveal_discipline.gd) can enforce VISION.md's vocabulary rules —
+# never hardcode player-facing strings here.
+const STRINGS_PATH := "res://content/strings.json"
 
 var core: SimCoreScript
 var total_targets: int = 0
+var _ui: Dictionary
 
 var _time: float = 0.0
 var _clear_t: float = -1.0
@@ -22,6 +25,10 @@ var _scan_tex: ImageTexture
 
 
 func _ready() -> void:
+	var table: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string(STRINGS_PATH))
+	_ui = table["ui"]
+
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
 	var vg := Gradient.new()
@@ -86,18 +93,18 @@ func _draw_hud(screen: Vector2) -> void:
 	var state := core.state
 
 	draw_string(
-		font, Vector2(24.0, 32.0), "ASSET-7 // COMBAT TRAINING SIM",
+		font, Vector2(24.0, 32.0), _ui["hud_mission"],
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
 	draw_string(
-		font, Vector2(24.0, 50.0), "ITERATION 001   T+" + str(state.tick).pad_zeros(6),
+		font, Vector2(24.0, 50.0), _ui["hud_sortie"] % str(state.tick).pad_zeros(6),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, dim)
 
-	var targets := "TARGETS %d / %d" % [state.blocks.size(), total_targets]
+	var targets: String = _ui["hud_targets"] % [state.blocks.size(), total_targets]
 	draw_string(
 		font, Vector2(0.0, 32.0), targets,
 		HORIZONTAL_ALIGNMENT_RIGHT, screen.x - 24.0, 13, col)
 	draw_string(
-		font, Vector2(0.0, 50.0), "INTEGRITY %d%%" % state.player_hp,
+		font, Vector2(0.0, 50.0), _ui["hud_integrity"] % state.player_hp,
 		HORIZONTAL_ALIGNMENT_RIGHT, screen.x - 24.0, 13, dim)
 
 
@@ -121,16 +128,16 @@ func _draw_clear_banner(screen: Vector2) -> void:
 	var s := 1.18 - 0.18 * eased
 	draw_set_transform(center * (1.0 - s), 0.0, Vector2(s, s))
 	_draw_spaced_text(
-		center + Vector2(0.0, 2.0), CLEAR_TITLE, 64, 10.0,
+		center + Vector2(0.0, 2.0), _ui["clear_banner"], 64, 10.0,
 		Color(COLOR_HUD, 0.28 * eased * flicker))
 	_draw_spaced_text(
-		center, CLEAR_TITLE, 64, 10.0, Color(COLOR_CLEAR, eased * flicker))
+		center, _ui["clear_banner"], 64, 10.0, Color(COLOR_CLEAR, eased * flicker))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	if _clear_t > 0.35:
 		var sub_a := clampf((_clear_t - 0.35) / 0.4, 0.0, 1.0)
 		_draw_spaced_text(
-			center + Vector2(0.0, 34.0), CLEAR_SUB, 15, 4.0,
+			center + Vector2(0.0, 34.0), _ui["clear_sub"], 15, 4.0,
 			Color(COLOR_HUD, 0.75 * sub_a * flicker))
 
 

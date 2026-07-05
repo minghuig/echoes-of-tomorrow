@@ -10,8 +10,8 @@ config_version=5
 
 [application]
 
-config/name="ASSET-7"
-config/description="A combat AI trapped in an endless training simulation."
+config/name="Echoes of Tomorrow"
+config/description="The same beach. The same battle. Again."
 run/main_scene="res://view/main.tscn"
 config/features=PackedStringArray("4.6")
 
