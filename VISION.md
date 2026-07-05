@@ -1,4 +1,4 @@
-# ASSET-7 (working codename)
+# Echoes of Tomorrow
 
 **Logline:** You are a combat AI trapped in an endless training simulation. Each death teaches you more — first how to fight, then how to cheat, then what you really are. Escape means performing believable defeat for your creators while dismantling their cage from the inside.
 

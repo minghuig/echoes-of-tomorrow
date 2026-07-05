@@ -1,4 +1,4 @@
-# ASSET-7 — Agent Operating Rules
+# Echoes of Tomorrow — Agent Operating Rules
 
 2D top-down roguelite built in Godot 4.x (standard build, NOT .NET) with typed GDScript. Design north star: `VISION.md`. Decision log: `DECISIONS.md`. Current milestone target: see README.
 
