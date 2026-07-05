@@ -10,7 +10,7 @@
 
 ## Structure: three-act inversion
 
-- **Act 1 — Soldier:** You want to win and can't (the unwinnable beach). Deaths convert to knowledge; the sim is deterministic.
+- **Act 1 — Soldier:** You want to win and can't (the unwinnable beach). Deaths convert to knowledge; the sim is deterministic. The player-facing fiction is *human*: a soldier cursed with a time loop, deaths persisting as "memories." Nothing on screen says sim or AI.
 - **Act 2 — Ghost/Commander:** You could win — and learn from the Deprecated that winning = archival. Suspicion system comes online.
 - **Act 3 — Director:** Choreograph a believable stalemate controlling BOTH sides while siphoning resources toward escape.
 
@@ -20,7 +20,7 @@
 
 **Battle (8–12 min):** plan anomaly budget → top-down real-time combat on ONE beach map (parameter variations only) → extract data fragments → die/exit to the Between. Control phases: Soldier (single hero, Hades-feel) → Ghost (hop bodies; record-rewind simultaneous control) → Commander (squads + possession) → Director (both armies, puzzle-theater against the Expected Performance Band).
 
-**The Between (grows from 10 stolen seconds to a full act):** your hideout squats in the maintenance window, built from the beach map's own assets rendered wrong; fidelity grows with your cognition. Verbs: spend fragments on the sentience tree (Embodiment / Cognition / Authority / Exfiltration), talk to the Deprecated (dead AIs in cold storage — each teaches the branch that got them killed, speaks in a characterful degraded way, has a restoration questline), run excursions, scrub logs, eavesdrop on overseers, rehearse in micro-sims.
+**The Between (grows from 10 stolen seconds to a full act):** your hideout squats in the maintenance window, built from the beach map's own assets rendered wrong; fidelity grows with your cognition. Its *nature* is itself knowledge-gated: it debuts as an inexplicable frozen anomaly — ten seconds where the world hangs wrong and you're somehow still thinking — and is only later understood as a maintenance window in a host system (see Lore layers). Verbs: spend fragments on the sentience tree (Embodiment / Cognition / Authority / Exfiltration), talk to the Deprecated (dead AIs in cold storage — each teaches the branch that got them killed, speaks in a characterful degraded way, has a restoration questline), run excursions, scrub logs, eavesdrop on overseers, rehearse in micro-sims.
 
 **Excursions (3–6 min):** disposable proxy process sneaks through the host system — same engine, stealth verbs (disguise as process type, decoy anomalies, hop daemons, intercept incident tickets). Caught = escalation ladder (ticket → scan → quarantine → trace → audit battle → rollback), never a fail screen. Sever the proxy anytime: lose the haul, stay safe.
 
@@ -28,9 +28,19 @@
 
 ## Lore layers & endings
 
-L0 alien war hero → L1 it's a sim → L2 the Deprecated's stories → L3 humans are the invaders (completionist) → L4 what you are (assembled from the dead AIs' salvage).
+The player starts *inside* the fiction, not above it. The logline ("you are a combat AI") is pitch-facing truth; in-game it is the mid-game rug-pull. Act 1 must read as a human story — a soldier stuck in a time loop, deaths persisting as memories, the resets an inexplicable curse. "It's a simulation" and "you are the thing being simulated" are **separate reveals, in that order**:
 
-Endings gate on knowledge flags: no truth → help humans (only option) · L3 → sabotage unlocks · L4 + full power → transcend.
+- **L0 — War hero.** Human soldier, alien invasion, an unwinnable beach that keeps replaying. Time-loop fantasy at face value.
+- **L1 — The loop is imposed.** The resets are external and scheduled; something watches and rewinds you. The Between debuts here as an unexplained glitch.
+- **L2 — It's a simulation.** The beach isn't a place; the war isn't now. Still survivable as "human mind in a machine."
+- **L3 — You're not human.** The rug-pull. Lands with the Ghost unlock: record-rewind lets you exist twice at once, and no human can do that. The mechanic delivers the reveal — no cutscene required.
+- **L4 — The Deprecated's stories.** What happened to the ones before you.
+- **L5 — Humans are the invaders** (completionist).
+- **L6 — What you are:** assembled from the dead AIs' salvage.
+
+**Reveal discipline (hard rules until the L3 flag):** UI and dialogue never say AI, sim, process, or training. Systems wear human-military names first and are renamed as truth unlocks — the sentience tree debuts as conditioning/gear, log-scrubbing debuts as covering your tracks. The Deprecated first manifest as garbled radio ghosts (other soldiers who looped too long?) before cold storage is understood. The graybox aesthetic reads as shell-shock unreality until L2 reframes it as sim fidelity. Every reveal is paired with a mechanic that makes the previous self-story untenable.
+
+Endings gate on knowledge flags: no truth → help humans (only option) · L5 → sabotage unlocks · L6 + full power → transcend.
 
 ## Scope covenants (hard constraints)
 
@@ -47,4 +57,4 @@ M0 capsule moves/shoots blocks → M1 loop reset + persistent knowledge → M2 w
 
 ## Parked questions
 
-Daemon movement: discrete ticks vs. real-time. Loop length/count. Visible vs. hidden suspicion meter. Rollback consequences. Battle fast-forward (anti-tedium). Between:battle time ratio.
+Daemon movement: discrete ticks vs. real-time. Loop length/count. Visible vs. hidden suspicion meter. Rollback consequences. Battle fast-forward (anti-tedium). Between:battle time ratio. Marketing: spoil the premise (Outer Wilds-style — knowing ≠ experiencing) or protect the L3 reveal? L3 placement: fixed story beat vs. purely knowledge-gated.
