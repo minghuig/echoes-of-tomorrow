@@ -1,5 +1,5 @@
 extends Node2D
-## M6 view: owns a SimCore, translates raw input into one Command per physics
+## M7 view: owns a SimCore, translates raw input into one Command per physics
 ## tick, and draws the resulting SimState with flat shapes. Read-only — never
 ## writes sim fields. Also owns the run lifecycle (reset, seed selection,
 ## command-log recording), the persistent meta layer, the meta win state
@@ -115,6 +115,17 @@ var _win_fragment_target: int = 0
 var _tree: Array = []
 var _between_selection: int = 0
 var _between_ticks: int = 0
+## 0 = sentience tree, 1 = intel log.
+var _between_page: int = 0
+
+# The intel log (content/intel.json): authored lore decrypted by the
+# lifetime combat record. Deaths convert to knowledge, literally.
+var _intel: Array = []
+var _intel_selection: int = 0
+## Entry ids decrypted by the most recent banked run (highlighted as NEW).
+var _fresh_intel: Array = []
+## A run's results bank exactly once (at death, or at manual reset).
+var _run_banked: bool = false
 
 # Ghost echo of the previous run: a parallel SimCore fed the recorded
 # command log, one tick per live tick. Never touches the live sim.
@@ -150,6 +161,8 @@ func _ready() -> void:
 	_win_fragment_target = _load_win_target()
 	_tree = JSON.parse_string(
 		FileAccess.get_file_as_string("res://content/sentience_tree.json"))["branches"]
+	_intel = JSON.parse_string(
+		FileAccess.get_file_as_string("res://content/intel.json"))["entries"]
 	_fx_rng.randomize()
 	_sfx_fire = _make_sfx_player(SfxScript.fire_blip(), -16.0)
 	_sfx_hit = _make_sfx_player(SfxScript.block_hit(), -10.0)
@@ -182,12 +195,20 @@ func _physics_process(_delta: float) -> void:
 
 	if _mode == Mode.BETWEEN:
 		_between_ticks += 1
-		if Input.is_action_just_pressed("move_left"):
-			_between_selection = (_between_selection + _tree.size() - 1) % _tree.size()
-		if Input.is_action_just_pressed("move_right"):
-			_between_selection = (_between_selection + 1) % _tree.size()
-		if Input.is_action_just_pressed("buy"):
-			_try_buy()
+		if Input.is_action_just_pressed("intel"):
+			_between_page = 1 - _between_page
+		if _between_page == 1:
+			if Input.is_action_just_pressed("move_up"):
+				_intel_selection = (_intel_selection + _intel.size() - 1) % _intel.size()
+			if Input.is_action_just_pressed("move_down"):
+				_intel_selection = (_intel_selection + 1) % _intel.size()
+		else:
+			if Input.is_action_just_pressed("move_left"):
+				_between_selection = (_between_selection + _tree.size() - 1) % _tree.size()
+			if Input.is_action_just_pressed("move_right"):
+				_between_selection = (_between_selection + 1) % _tree.size()
+			if Input.is_action_just_pressed("buy"):
+				_try_buy()
 		if _between_ticks >= 5 and Input.is_action_just_pressed("reset"):
 			_mode = Mode.PLAYING
 			_start_run()
@@ -200,8 +221,10 @@ func _physics_process(_delta: float) -> void:
 		queue_redraw()
 		return
 
-	# Down: the sim froze itself; hold on the death panel until redeploy.
+	# Down: the sim froze itself; bank the run now so the death panel can
+	# announce fresh decrypts, then hold until redeploy.
 	if _core.state.player_down:
+		_bank_run_results()
 		_decay_fx()
 		if Input.is_action_just_pressed("reset"):
 			_end_run()
@@ -228,17 +251,36 @@ func _physics_process(_delta: float) -> void:
 	queue_redraw()
 
 
-## Tear down the current run — retain its (seed, loadout, command_log), bank
-## its fragments into the persistent meta layer — then roll credits (first
-## time the lifetime fragment target is reached) or drop into the Between.
+## Fold the run's results into the persistent record exactly once: fragments
+## bank, the combat record grows, and the intel log re-evaluates its locks.
+func _bank_run_results() -> void:
+	if _run_banked:
+		return
+	_run_banked = true
+	var s: SimStateScript = _core.state
+	_meta.total_fragments += s.fragments
+	_meta.lifetime_fragments += s.fragments
+	_meta.lifetime_kills += s.kills
+	_meta.best_wave = maxi(_meta.best_wave, s.wave_index)
+	if s.player_down:
+		_meta.deaths += 1
+	var fresh: Array = _meta.evaluate_intel(_intel)
+	if not fresh.is_empty():
+		_fresh_intel = fresh
+		_sfx_buy.play()
+	_meta.save_to_disk()
+
+
+## Tear down the current run — retain its (seed, loadout, command_log), make
+## sure its results are banked — then roll credits (first time the lifetime
+## fragment target is reached) or drop into the Between.
 func _end_run() -> void:
+	_bank_run_results()
 	var record := RunRecord.new()
 	record.seed_value = _run_seed
 	record.command_log = _command_log
 	record.loadout = _run_loadout
 	_last_run = record
-	_meta.total_fragments += _core.state.fragments
-	_meta.save_to_disk()
 	if _meta.wins == 0 and _meta.total_fragments >= _win_fragment_target:
 		_meta.wins += 1
 		_meta.save_to_disk()
@@ -261,6 +303,10 @@ func _try_buy() -> void:
 		return
 	_meta.total_fragments -= cost
 	_meta.upgrades[branch["id"]] = owned + 1
+	# Restorations can decrypt intel too (the Deprecated notice the work).
+	var fresh: Array = _meta.evaluate_intel(_intel)
+	if not fresh.is_empty():
+		_fresh_intel.append_array(fresh)
 	_meta.save_to_disk()
 	_sfx_buy.play()
 
@@ -302,6 +348,8 @@ func _start_run() -> void:
 	_pops.clear()
 	_hurt_frames = 0
 	_wave_banner_frames = 0
+	_run_banked = false
+	_fresh_intel = []
 	_run_loadout = _resolve_loadout()
 	_core = SimCoreScript.new()
 	_core.setup(_run_seed, _run_loadout)
@@ -652,7 +700,11 @@ func _draw_death_panel(state: SimStateScript) -> void:
 	var stats := "WAVE %d   KILLS %d   FRAGMENTS +%d   %d:%02d" % [
 		state.wave_index, state.kills, state.fragments, seconds / 60, seconds % 60]
 	_draw_centered(font, stats, 380.0, 30, COLOR_CLEAR_TEXT)
-	_draw_centered(font, "[R]  ENTER THE BETWEEN", 470.0, 26, COLOR_AIM)
+	if not _fresh_intel.is_empty():
+		_draw_centered(
+			font, "%d NEW INTEL DECRYPTED" % _fresh_intel.size(), 428.0, 22,
+			COLOR_PROJECTILE)
+	_draw_centered(font, "[R]  ENTER THE BETWEEN", 480.0, 26, COLOR_AIM)
 
 
 func _draw_centered(
@@ -664,9 +716,9 @@ func _draw_centered(
 		HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, color)
 
 
-## The hideout in the maintenance window: the sentience tree, four branches
-## taught by the Deprecated. Fragments are spent here; the resulting loadout
-## feeds the next run's SimCore at setup.
+## The hideout in the maintenance window: the sentience tree (fragments buy
+## permanent restorations) and the intel log (the combat record decrypts
+## authored lore). Shared chrome, two pages.
 func _draw_between(arena: Rect2) -> void:
 	draw_rect(arena, COLOR_BG, true)
 	var font := ThemeDB.fallback_font
@@ -682,6 +734,19 @@ func _draw_between(arena: Rect2) -> void:
 	_draw_centered(
 		font, "FRAGMENTS  %d" % _meta.total_fragments, 148.0, 30, COLOR_PROJECTILE)
 
+	if _between_page == 1:
+		_draw_intel_page(arena, font)
+		_draw_centered(
+			font, "[W/S] SELECT      [Q] SENTIENCE TREE      [R] REDEPLOY",
+			668.0, 20, COLOR_AIM)
+	else:
+		_draw_tree_page(arena, font)
+		_draw_centered(
+			font, "[A/D] SELECT      [E] INSTALL      [Q] INTEL      [R] REDEPLOY",
+			668.0, 20, COLOR_AIM)
+
+
+func _draw_tree_page(arena: Rect2, font: Font) -> void:
 	var panel_w := 288.0
 	var gap := (arena.size.x - panel_w * _tree.size()) / (_tree.size() + 1)
 	for i in _tree.size():
@@ -724,8 +789,55 @@ func _draw_between(arena: Rect2) -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, panel_w - 36.0, 14, -1,
 			Color(COLOR_HUD_TEXT, 0.85))
 
-	_draw_centered(
-		font, "[A/D] SELECT      [E] INSTALL      [R] REDEPLOY", 668.0, 20, COLOR_AIM)
+
+## Left: every dossier line, decrypted or locked. Right: the selected entry,
+## or its decryption key if still locked.
+func _draw_intel_page(arena: Rect2, font: Font) -> void:
+	var list_x := 64.0
+	var top := 210.0
+	for i in _intel.size():
+		var entry: Dictionary = _intel[i]
+		var id := String(entry["id"])
+		var unlocked := _meta.unlocked_intel.has(id)
+		var y := top + i * 29.0
+		if i == _intel_selection:
+			draw_rect(Rect2(list_x - 14.0, y - 19.0, 430.0, 27.0), Color(COLOR_SEA, 0.7))
+		var label := String(entry["title"]) if unlocked else "[ ENCRYPTED ]"
+		var color := COLOR_CLEAR_TEXT if unlocked else Color(COLOR_HUD_TEXT, 0.45)
+		draw_string(font, Vector2(list_x, y), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, color)
+		if _fresh_intel.has(id):
+			draw_string(
+				font, Vector2(list_x + 356.0, y), "NEW",
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 14, COLOR_PROJECTILE)
+
+	var panel := Rect2(520.0, 190.0, 696.0, 440.0)
+	draw_rect(panel, Color(COLOR_SEA, 0.5))
+	draw_rect(panel, Color(COLOR_HUD_TEXT, 0.4), false, 1.0)
+	var selected: Dictionary = _intel[_intel_selection]
+	var selected_unlocked := _meta.unlocked_intel.has(String(selected["id"]))
+	if selected_unlocked:
+		draw_string(
+			font, Vector2(panel.position.x + 24.0, 234.0), String(selected["title"]),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 24, COLOR_CLEAR_TEXT)
+		draw_multiline_string(
+			font, Vector2(panel.position.x + 24.0, 280.0), String(selected["body"]),
+			HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 48.0, 18, -1, COLOR_HUD_TEXT)
+	else:
+		draw_string(
+			font, Vector2(panel.position.x + 24.0, 234.0), "[ ENCRYPTED ]",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color(COLOR_HUD_TEXT, 0.6))
+		draw_string(
+			font, Vector2(panel.position.x + 24.0, 280.0),
+			"DECRYPTION KEY: %s" % String(selected["hint"]),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, COLOR_DOWN_TEXT)
+	var progress := 0
+	for entry: Dictionary in _intel:
+		if _meta.unlocked_intel.has(String(entry["id"])):
+			progress += 1
+	draw_string(
+		font, Vector2(panel.position.x + 24.0, panel.end.y - 20.0),
+		"DECRYPTED %d / %d" % [progress, _intel.size()],
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, COLOR_HUD_TEXT)
 
 
 func _draw_text_centered_at(

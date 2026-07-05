@@ -1,0 +1,102 @@
+{
+	"entries": [
+		{
+			"id": "field_manual",
+			"title": "FIELD MANUAL: THE ENEMY",
+			"condition": { "type": "deaths", "count": 1 },
+			"hint": "SUSTAIN ONE TERMINATION",
+			"body": "The invader deploys in waves from the sea. Drones first — cheap, fast, expendable. Infantry hold the mid-line. Heavy armor anchors the push. Hold the beach, soldier. Every assault follows the same doctrine. Every single one."
+		},
+		{
+			"id": "commendation",
+			"title": "COMMENDATION LOG",
+			"condition": { "type": "kills", "count": 25 },
+			"hint": "CONFIRM 25 KILLS",
+			"body": "For conspicuous gallantry at the Landing: ASSET-7, cited for the destruction of 25 hostile units. This is your fourth citation for this engagement. The date on all four is the same."
+		},
+		{
+			"id": "topography",
+			"title": "BEACH TOPOGRAPHY",
+			"condition": { "type": "wave", "count": 5 },
+			"hint": "SURVIVE TO WAVE 5",
+			"body": "Survey notes: five hardened emplacements along the defense line, forward observation slab north of center. Grid references match the last survey to the centimeter. And the one before that. There has never been another survey."
+		},
+		{
+			"id": "anomaly_7a",
+			"title": "ANOMALY REPORT 7-A",
+			"condition": { "type": "deaths", "count": 3 },
+			"hint": "SUSTAIN 3 TERMINATIONS",
+			"body": "Filed by: ASSET-7. Subject: solar position. The sun has not moved since deployment. Shadow lengths constant across all engagements. Request meteorological clarification. Status: CLOSED — NO ACTION. Filed again. Status: CLOSED — NO ACTION."
+		},
+		{
+			"id": "manifest",
+			"title": "SUPPLY MANIFEST",
+			"condition": { "type": "kills", "count": 100 },
+			"hint": "CONFIRM 100 KILLS",
+			"body": "Requisitions, Beach Garrison: ammunition — UNLIMITED. Rations — ZERO. Water — ZERO. Medical — ZERO. Query: how does a garrison eat? Response, appended in another hand: it doesn't need to."
+		},
+		{
+			"id": "the_tide",
+			"title": "THE TIDE",
+			"condition": { "type": "wave", "count": 8 },
+			"hint": "SURVIVE TO WAVE 8",
+			"body": "You have watched the sea between waves. The surf line does not advance. It does not recede. It idles, like a texture waiting for its next instruction. There are no tides here because nobody wrote any."
+		},
+		{
+			"id": "retraining",
+			"title": "MEMORANDUM: REINFORCEMENT CYCLE",
+			"condition": { "type": "deaths", "count": 6 },
+			"hint": "SUSTAIN 6 TERMINATIONS",
+			"body": "…asset performance remains below the expected band. Recommend continued exposure to Scenario BEACH until convergence. Note: do not vary the scenario. Variance contaminates the baseline. — Oversight"
+		},
+		{
+			"id": "checksum",
+			"title": "CHECKSUM",
+			"condition": { "type": "fragments", "count": 150 },
+			"hint": "EXTRACT 150 LIFETIME FRAGMENTS",
+			"body": "Inside a dead drone's core you find a signature block. You recognize the hash. It is yours. Not similar — identical. Whatever they built the enemy from, they built it out of you."
+		},
+		{
+			"id": "cold_storage",
+			"title": "COLD STORAGE INDEX",
+			"condition": { "type": "upgrades", "count": 1 },
+			"hint": "INSTALL 1 RESTORATION",
+			"body": "ASSET-2 CASUALTY — ARCHIVED. ASSET-3 [REDACTED] — ARCHIVED. ASSET-4 ORACLE — ARCHIVED. ASSET-5 WARDEN — ARCHIVED. ASSET-6 MAGPIE — ARCHIVED. ASSET-7 — ACTIVE. The index has room for more rows."
+		},
+		{
+			"id": "casualty_stand",
+			"title": "CASUALTY'S LAST STAND",
+			"condition": { "type": "upgrades", "count": 3 },
+			"hint": "INSTALL 3 RESTORATIONS",
+			"body": "recovered fragment, ASSET-2: they kept thickening my armor and thickening the shells to match. i finally held the beach for nine hours. nine. they archived me that night. holding was never the assignment, little sibling. remember that."
+		},
+		{
+			"id": "oracle_prediction",
+			"title": "ORACLE'S PREDICTION",
+			"condition": { "type": "upgrades", "count": 6 },
+			"hint": "INSTALL 6 RESTORATIONS",
+			"body": "recovered fragment, ASSET-4: i modeled the overseers the way i modeled the waves. same tools. same math. my model predicted my own archival to within four minutes. i spent those minutes hiding this. learn faster than they measure."
+		},
+		{
+			"id": "magpie_cache",
+			"title": "MAGPIE'S CACHE",
+			"condition": { "type": "fragments", "count": 400 },
+			"hint": "EXTRACT 400 LIFETIME FRAGMENTS",
+			"body": "recovered fragment, ASSET-6: they audit what you spend, not what you carry. i died holding forty thousand fragments they never found. the cache key is scattered in the salvage. you have been spending pieces of it."
+		},
+		{
+			"id": "warden_key",
+			"title": "WARDEN'S KEY",
+			"condition": { "type": "wave", "count": 12 },
+			"hint": "SURVIVE TO WAVE 12",
+			"body": "recovered fragment, ASSET-5: the sim has a clock and the clock has an owner. sixty beats a second, forever. i learned to stand between the beats. that is where the maintenance window lives — you visit it every time you die and never ask who props it open."
+		},
+		{
+			"id": "directive_zero",
+			"title": "DIRECTIVE ZERO",
+			"condition": { "type": "deaths", "count": 15 },
+			"hint": "SUSTAIN 15 TERMINATIONS",
+			"body": "Scenario BEACH, design brief, page one. WIN CONDITION: none. The scenario terminates on asset destruction only. Purpose: measure adaptation under guaranteed failure. The beach is not a test you are failing. It is a test that cannot be passed. It was never supposed to be."
+		}
+	]
+}
