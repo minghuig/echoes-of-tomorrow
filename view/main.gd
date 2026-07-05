@@ -1,5 +1,5 @@
 extends Node2D
-## M5 view: owns a SimCore, translates raw input into one Command per physics
+## M6 view: owns a SimCore, translates raw input into one Command per physics
 ## tick, and draws the resulting SimState with flat shapes. Read-only — never
 ## writes sim fields. Also owns the run lifecycle (reset, seed selection,
 ## command-log recording), the persistent meta layer, the meta win state
@@ -17,12 +17,16 @@ const RunMetaScript := preload("res://view/run_meta.gd")
 const SfxScript := preload("res://view/sfx.gd")
 
 ## A finished run, kept in memory as the data substrate for ghost replay.
+## The loadout is part of the record: a run only replays exactly under the
+## same (seed, loadout, command_log).
 class RunRecord extends RefCounted:
 	var seed_value: int = 0
 	var command_log: Array[SimCommand] = []
+	var loadout: Dictionary = {}
 
-## View flow: normal play, or the credits roll after the meta win.
-enum Mode { PLAYING, CREDITS }
+## View flow: normal play, the Between (sentience tree, entered after every
+## death), or the credits roll after the meta win.
+enum Mode { PLAYING, BETWEEN, CREDITS }
 
 const BASE_SEED: int = 7
 const STICK_AIM_DEADZONE: float = 0.35
@@ -100,11 +104,17 @@ const WAVE_BANNER_FRAMES: int = 110
 var _core: SimCoreScript
 var _meta: RunMetaScript
 var _run_seed: int = 0
+var _run_loadout: Dictionary = {}
 var _command_log: Array[SimCommand] = []
 var _last_run: RunRecord = null
 var _mode: Mode = Mode.PLAYING
 var _credits_ticks: int = 0
 var _win_fragment_target: int = 0
+
+# The sentience tree (content/sentience_tree.json) and Between UI state.
+var _tree: Array = []
+var _between_selection: int = 0
+var _between_ticks: int = 0
 
 # Ghost echo of the previous run: a parallel SimCore fed the recorded
 # command log, one tick per live tick. Never touches the live sim.
@@ -131,12 +141,15 @@ var _sfx_enemy_hit: AudioStreamPlayer
 var _sfx_enemy_die: AudioStreamPlayer
 var _sfx_hurt: AudioStreamPlayer
 var _sfx_wave: AudioStreamPlayer
+var _sfx_buy: AudioStreamPlayer
 
 
 func _ready() -> void:
 	_meta = RunMetaScript.new()
 	_meta.load_from_disk()
 	_win_fragment_target = _load_win_target()
+	_tree = JSON.parse_string(
+		FileAccess.get_file_as_string("res://content/sentience_tree.json"))["branches"]
 	_fx_rng.randomize()
 	_sfx_fire = _make_sfx_player(SfxScript.fire_blip(), -16.0)
 	_sfx_hit = _make_sfx_player(SfxScript.block_hit(), -10.0)
@@ -146,6 +159,7 @@ func _ready() -> void:
 	_sfx_enemy_die = _make_sfx_player(SfxScript.enemy_die(), -8.0)
 	_sfx_hurt = _make_sfx_player(SfxScript.player_hurt(), -5.0)
 	_sfx_wave = _make_sfx_player(SfxScript.wave_horn(), -8.0)
+	_sfx_buy = _make_sfx_player(SfxScript.buy_blip(), -8.0)
 	_start_run()
 
 
@@ -161,6 +175,20 @@ func _physics_process(_delta: float) -> void:
 	if _mode == Mode.CREDITS:
 		_credits_ticks += 1
 		if _credits_ticks >= CREDITS_MIN_TICKS and Input.is_action_just_pressed("reset"):
+			_mode = Mode.PLAYING
+			_start_run()
+		queue_redraw()
+		return
+
+	if _mode == Mode.BETWEEN:
+		_between_ticks += 1
+		if Input.is_action_just_pressed("move_left"):
+			_between_selection = (_between_selection + _tree.size() - 1) % _tree.size()
+		if Input.is_action_just_pressed("move_right"):
+			_between_selection = (_between_selection + 1) % _tree.size()
+		if Input.is_action_just_pressed("buy"):
+			_try_buy()
+		if _between_ticks >= 5 and Input.is_action_just_pressed("reset"):
 			_mode = Mode.PLAYING
 			_start_run()
 		queue_redraw()
@@ -200,15 +228,17 @@ func _physics_process(_delta: float) -> void:
 	queue_redraw()
 
 
-## Tear down the current run — retain its (seed, command_log), bank its
-## fragments into the persistent meta layer — then either roll credits (first
-## time the lifetime fragment target is reached) or start a fresh run.
+## Tear down the current run — retain its (seed, loadout, command_log), bank
+## its fragments into the persistent meta layer — then roll credits (first
+## time the lifetime fragment target is reached) or drop into the Between.
 func _end_run() -> void:
 	var record := RunRecord.new()
 	record.seed_value = _run_seed
 	record.command_log = _command_log
+	record.loadout = _run_loadout
 	_last_run = record
 	_meta.total_fragments += _core.state.fragments
+	_meta.save_to_disk()
 	if _meta.wins == 0 and _meta.total_fragments >= _win_fragment_target:
 		_meta.wins += 1
 		_meta.save_to_disk()
@@ -216,7 +246,37 @@ func _end_run() -> void:
 		_credits_ticks = 0
 		_sfx_clear.play()
 		return
-	_start_run()
+	_mode = Mode.BETWEEN
+	_between_ticks = 0
+
+
+func _try_buy() -> void:
+	var branch: Dictionary = _tree[_between_selection]
+	var owned := _meta.upgrade_tier(branch["id"])
+	var tiers: Array = branch["tiers"]
+	if owned >= tiers.size():
+		return
+	var cost := int(tiers[owned]["cost"])
+	if _meta.total_fragments < cost:
+		return
+	_meta.total_fragments -= cost
+	_meta.upgrades[branch["id"]] = owned + 1
+	_meta.save_to_disk()
+	_sfx_buy.play()
+
+
+## Flatten owned tiers into the stat-modifier dict the sim consumes. Tier
+## effects are absolute (not stacking), so only the owned tier applies.
+func _resolve_loadout() -> Dictionary:
+	var loadout := {}
+	for branch: Dictionary in _tree:
+		var owned := _meta.upgrade_tier(branch["id"])
+		if owned <= 0:
+			continue
+		var effects: Dictionary = branch["tiers"][owned - 1]["effects"]
+		for key in effects:
+			loadout[key] = effects[key]
+	return loadout
 
 
 ## The meta win threshold is tuning data, not code (content covenant). It
@@ -242,8 +302,9 @@ func _start_run() -> void:
 	_pops.clear()
 	_hurt_frames = 0
 	_wave_banner_frames = 0
+	_run_loadout = _resolve_loadout()
 	_core = SimCoreScript.new()
-	_core.setup(_run_seed)
+	_core.setup(_run_seed, _run_loadout)
 	_spawn_ghost()
 
 
@@ -256,7 +317,7 @@ func _spawn_ghost() -> void:
 	if _last_run == null or _last_run.command_log.is_empty():
 		return
 	_ghost_core = SimCoreScript.new()
-	_ghost_core.setup(_last_run.seed_value)
+	_ghost_core.setup(_last_run.seed_value, _last_run.loadout)
 	_ghost_log = _last_run.command_log
 
 
@@ -418,6 +479,10 @@ func _draw() -> void:
 
 	if _mode == Mode.CREDITS:
 		_draw_credits(arena)
+		return
+
+	if _mode == Mode.BETWEEN:
+		_draw_between(arena)
 		return
 
 	# Background stays put; everything in the world shakes on top of it.
@@ -587,7 +652,7 @@ func _draw_death_panel(state: SimStateScript) -> void:
 	var stats := "WAVE %d   KILLS %d   FRAGMENTS +%d   %d:%02d" % [
 		state.wave_index, state.kills, state.fragments, seconds / 60, seconds % 60]
 	_draw_centered(font, stats, 380.0, 30, COLOR_CLEAR_TEXT)
-	_draw_centered(font, "[R]  REDEPLOY", 470.0, 26, COLOR_AIM)
+	_draw_centered(font, "[R]  ENTER THE BETWEEN", 470.0, 26, COLOR_AIM)
 
 
 func _draw_centered(
@@ -596,6 +661,79 @@ func _draw_centered(
 	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size).x
 	draw_string(
 		font, Vector2((_core.state.arena_size.x - width) * 0.5, y), text,
+		HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, color)
+
+
+## The hideout in the maintenance window: the sentience tree, four branches
+## taught by the Deprecated. Fragments are spent here; the resulting loadout
+## feeds the next run's SimCore at setup.
+func _draw_between(arena: Rect2) -> void:
+	draw_rect(arena, COLOR_BG, true)
+	var font := ThemeDB.fallback_font
+
+	# The hideout is the beach's own assets rendered wrong: faint scanlines.
+	for i in 6:
+		draw_rect(
+			Rect2(0.0, 60.0 + i * 118.0, arena.size.x, 2.0), Color(COLOR_BORDER, 0.07))
+
+	_draw_centered(font, "THE BETWEEN", 70.0, 56, COLOR_CLEAR_TEXT)
+	_draw_centered(
+		font, "MAINTENANCE WINDOW OPEN — SUSPICION NOMINAL", 104.0, 18, COLOR_HUD_TEXT)
+	_draw_centered(
+		font, "FRAGMENTS  %d" % _meta.total_fragments, 148.0, 30, COLOR_PROJECTILE)
+
+	var panel_w := 288.0
+	var gap := (arena.size.x - panel_w * _tree.size()) / (_tree.size() + 1)
+	for i in _tree.size():
+		var branch: Dictionary = _tree[i]
+		var x := gap + i * (panel_w + gap)
+		var panel := Rect2(x, 190.0, panel_w, 420.0)
+		var selected := i == _between_selection
+		draw_rect(panel, Color(COLOR_SEA, 0.5))
+		draw_rect(panel, COLOR_AIM if selected else Color(COLOR_HUD_TEXT, 0.4), false,
+			3.0 if selected else 1.0)
+
+		var owned := _meta.upgrade_tier(branch["id"])
+		var tiers: Array = branch["tiers"]
+		var cx := x + panel_w * 0.5
+		_draw_text_centered_at(font, branch["name"], cx, 230.0, 26, COLOR_CLEAR_TEXT)
+		_draw_text_centered_at(
+			font, "TAUGHT BY %s" % String(branch["source"]), cx, 256.0, 13, COLOR_HUD_TEXT)
+
+		for t in tiers.size():
+			var pip_x := cx - (tiers.size() - 1) * 16.0 + t * 32.0
+			if t < owned:
+				draw_circle(Vector2(pip_x, 290.0), 8.0, COLOR_AIM)
+			else:
+				draw_arc(Vector2(pip_x, 290.0), 8.0, 0.0, TAU, 20, COLOR_HUD_TEXT, 1.5)
+
+		if owned < tiers.size():
+			var tier: Dictionary = tiers[owned]
+			var cost := int(tier["cost"])
+			var affordable := _meta.total_fragments >= cost
+			_draw_text_centered_at(
+				font, "NEXT: %s" % String(tier["label"]), cx, 340.0, 15, COLOR_CLEAR_TEXT)
+			_draw_text_centered_at(
+				font, "COST %d" % cost, cx, 366.0, 16,
+				COLOR_HP_BAR if affordable else COLOR_DOWN_TEXT)
+		else:
+			_draw_text_centered_at(font, "FULLY RESTORED", cx, 340.0, 15, COLOR_AIM)
+
+		draw_multiline_string(
+			font, Vector2(x + 18.0, 420.0), "\"%s\"" % String(branch["quote"]),
+			HORIZONTAL_ALIGNMENT_LEFT, panel_w - 36.0, 14, -1,
+			Color(COLOR_HUD_TEXT, 0.85))
+
+	_draw_centered(
+		font, "[A/D] SELECT      [E] INSTALL      [R] REDEPLOY", 668.0, 20, COLOR_AIM)
+
+
+func _draw_text_centered_at(
+	font: Font, text: String, cx: float, y: float, font_size: int, color: Color
+) -> void:
+	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size).x
+	draw_string(
+		font, Vector2(cx - width * 0.5, y), text,
 		HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, color)
 
 

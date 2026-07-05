@@ -39,6 +39,10 @@ static func wave_horn() -> AudioStreamWAV:
 	return _tone([262.0, 330.0], 0.3)
 
 
+static func buy_blip() -> AudioStreamWAV:
+	return _tone([523.0, 784.0], 0.14)
+
+
 ## Square wave with exponential decay; multiple frequencies play as equal
 ## sequential segments (a tiny arpeggio).
 static func _tone(freqs: Array, duration: float) -> AudioStreamWAV:
