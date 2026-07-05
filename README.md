@@ -6,6 +6,12 @@ A 2D top-down roguelite about a combat AI trapped in an endless training simulat
 
 Open the project in Godot 4.6 (standard build, not .NET) and press **F5**. WASD / left stick to move, mouse / right stick to aim, LMB / right trigger to fire, Space / A (Cross) to dodge, R / Start to reset the run.
 
+## PR previews & mobile
+
+Every pull request builds the web export and publishes it to the `gh-pages` branch under `pr/<number>/` (with a playable link commented on the PR); pushes to `main` publish to `latest/`. Serving requires GitHub Pages to be enabled once: **Settings → Pages → Deploy from a branch → `gh-pages`, `/ (root)`**. Until then the branch still updates, and all links go live the moment Pages is switched on.
+
+On phones and tablets the web build enables virtual touch controls automatically (web + touchscreen only — desktop web and native builds never show them): left half is a floating move stick, right half is drag-to-aim with auto-fire, the bottom-right button dashes, and menu screens are tappable. Bluetooth gamepads also work in the browser.
+
 ## Tests
 
 ```sh

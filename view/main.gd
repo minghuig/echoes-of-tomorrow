@@ -15,6 +15,7 @@ const SimStateScript := preload("res://sim/sim_state.gd")
 const SimCommand := preload("res://sim/command.gd")
 const RunMetaScript := preload("res://view/run_meta.gd")
 const SfxScript := preload("res://view/sfx.gd")
+const TouchInputScript := preload("res://view/touch_input.gd")
 
 ## A finished run, kept in memory as the data substrate for ghost replay.
 ## The loadout is part of the record: a run only replays exactly under the
@@ -81,6 +82,10 @@ const COLOR_POP := Color("b8a6ff")
 
 ## The sea band enemies wade out of, in pixels from the top edge.
 const SEA_DEPTH: float = 110.0
+
+## Tap targets for the Between on touch devices (replace the key hints).
+const BETWEEN_BTN_TOGGLE := Rect2(320.0, 636.0, 280.0, 56.0)
+const BETWEEN_BTN_DEPLOY := Rect2(680.0, 636.0, 280.0, 56.0)
 
 # Feel-pass tuning (view frames, not sim ticks — hit-stop frames skip the
 # view tick entirely, sim included, so logs stay aligned).
@@ -154,6 +159,9 @@ var _sfx_hurt: AudioStreamPlayer
 var _sfx_wave: AudioStreamPlayer
 var _sfx_buy: AudioStreamPlayer
 
+## Virtual touch controls — active only on web with a touchscreen.
+var _touch := TouchInputScript.new()
+
 
 func _ready() -> void:
 	_meta = RunMetaScript.new()
@@ -174,6 +182,11 @@ func _ready() -> void:
 	_sfx_wave = _make_sfx_player(SfxScript.wave_horn(), -8.0)
 	_sfx_buy = _make_sfx_player(SfxScript.buy_blip(), -8.0)
 	_start_run()
+	_touch.setup(_core.state.arena_size)
+
+
+func _input(event: InputEvent) -> void:
+	_touch.handle(event)
 
 
 func _make_sfx_player(stream: AudioStreamWAV, volume_db: float) -> AudioStreamPlayer:
@@ -187,7 +200,8 @@ func _make_sfx_player(stream: AudioStreamWAV, volume_db: float) -> AudioStreamPl
 func _physics_process(_delta: float) -> void:
 	if _mode == Mode.CREDITS:
 		_credits_ticks += 1
-		if _credits_ticks >= CREDITS_MIN_TICKS and Input.is_action_just_pressed("reset"):
+		if _credits_ticks >= CREDITS_MIN_TICKS and (
+			Input.is_action_just_pressed("reset") or _consumed_tap()):
 			_mode = Mode.PLAYING
 			_start_run()
 		queue_redraw()
@@ -209,7 +223,9 @@ func _physics_process(_delta: float) -> void:
 				_between_selection = (_between_selection + 1) % _tree.size()
 			if Input.is_action_just_pressed("buy"):
 				_try_buy()
-		if _between_ticks >= 5 and Input.is_action_just_pressed("reset"):
+		_handle_between_taps()
+		if _mode == Mode.BETWEEN and _between_ticks >= 5 \
+				and Input.is_action_just_pressed("reset"):
 			_mode = Mode.PLAYING
 			_start_run()
 		queue_redraw()
@@ -226,7 +242,7 @@ func _physics_process(_delta: float) -> void:
 	if _core.state.player_down:
 		_bank_run_results()
 		_decay_fx()
-		if Input.is_action_just_pressed("reset"):
+		if Input.is_action_just_pressed("reset") or _consumed_tap():
 			_end_run()
 		queue_redraw()
 		return
@@ -248,7 +264,44 @@ func _physics_process(_delta: float) -> void:
 	_emit_feel_events(
 		cmd.fire and pre_fire_cooldown == 0, pre_blocks, pre_enemies, pre_hp, pre_wave)
 	_decay_fx()
+	# Combat touches (stick, aim, dodge) also land in the tap list; they mean
+	# nothing during play, so drop them instead of letting them pile up.
+	_touch.consume_taps()
 	queue_redraw()
+
+
+## True if the player tapped anywhere this frame (touch devices only).
+func _consumed_tap() -> bool:
+	return _touch.enabled and not _touch.consume_taps().is_empty()
+
+
+## Touch UI for the Between: tap a branch to select it, tap it again to
+## install; tap intel rows to read; bottom buttons flip pages and redeploy.
+func _handle_between_taps() -> void:
+	if not _touch.enabled:
+		return
+	for tap: Vector2 in _touch.consume_taps():
+		if BETWEEN_BTN_TOGGLE.has_point(tap):
+			_between_page = 1 - _between_page
+		elif BETWEEN_BTN_DEPLOY.has_point(tap) and _between_ticks >= 5:
+			_mode = Mode.PLAYING
+			_start_run()
+			return
+		elif _between_page == 1:
+			# Rows drawn at y = 210 + i * 29 (baseline), highlight from y-19.
+			var row := int((tap.y - 191.0) / 29.0)
+			if tap.x < 500.0 and row >= 0 and row < _intel.size():
+				_intel_selection = row
+		else:
+			var panel_w := 288.0
+			var gap := (_core.state.arena_size.x - panel_w * _tree.size()) / (_tree.size() + 1)
+			for i in _tree.size():
+				if Rect2(gap + i * (panel_w + gap), 190.0, panel_w, 420.0).has_point(tap):
+					if i == _between_selection:
+						_try_buy()
+					else:
+						_between_selection = i
+					break
 
 
 ## Fold the run's results into the persistent record exactly once: fragments
@@ -508,6 +561,26 @@ func _build_command() -> SimCommand:
 	cmd.aim = _read_aim()
 	cmd.fire = Input.is_action_pressed("fire")
 	cmd.dodge = Input.is_action_just_pressed("dodge")
+
+	# On touch devices the browser emulates a mouse from touches, which
+	# would fight the virtual stick — so touch replaces pointer input
+	# entirely (gamepads still work).
+	if _touch.enabled:
+		if _touch.stick_active():
+			cmd.move = _touch.stick_vector
+		if _touch.aim_active():
+			cmd.aim = _touch.aim_point - _core.state.player_pos
+			cmd.fire = true
+		else:
+			var stick := Vector2(
+				Input.get_joy_axis(0, JOY_AXIS_RIGHT_X),
+				Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y),
+			)
+			cmd.aim = stick.normalized() if stick.length() > STICK_AIM_DEADZONE \
+				else Vector2.ZERO
+			cmd.fire = Input.get_joy_axis(0, JOY_AXIS_TRIGGER_RIGHT) > 0.5
+		if _touch.consume_dodge():
+			cmd.dodge = true
 	return cmd
 
 
@@ -568,10 +641,45 @@ func _draw() -> void:
 
 	_draw_hud(state)
 
+	if _touch.enabled and not state.player_down:
+		_draw_touch_overlay(state)
 	if _wave_banner_frames > 0:
 		_draw_wave_banner(state)
 	if state.player_down:
 		_draw_death_panel(state)
+
+
+## Faint virtual-control chrome: floating stick, aim reticle, dodge button.
+func _draw_touch_overlay(state: SimStateScript) -> void:
+	if _touch.stick_active():
+		draw_circle(_touch.stick_anchor, TouchInputScript.STICK_RADIUS, Color(1, 1, 1, 0.05))
+		draw_arc(
+			_touch.stick_anchor, TouchInputScript.STICK_RADIUS, 0.0, TAU, 32,
+			Color(1, 1, 1, 0.25), 2.0)
+		draw_circle(
+			_touch.stick_anchor + _touch.stick_vector * TouchInputScript.STICK_RADIUS,
+			TouchInputScript.KNOB_RADIUS, Color(1, 1, 1, 0.28))
+	else:
+		var rest := Vector2(150.0, state.arena_size.y - 150.0)
+		draw_arc(rest, TouchInputScript.STICK_RADIUS, 0.0, TAU, 32, Color(1, 1, 1, 0.1), 2.0)
+
+	if _touch.aim_active():
+		draw_arc(_touch.aim_point, 26.0, 0.0, TAU, 24, Color(COLOR_PROJECTILE, 0.5), 2.0)
+
+	var center := _touch.dodge_center()
+	var dodge_ready := state.dodge_cooldown == 0
+	draw_circle(
+		center, TouchInputScript.DODGE_RADIUS,
+		Color(COLOR_AIM, 0.1 if dodge_ready else 0.04))
+	draw_arc(
+		center, TouchInputScript.DODGE_RADIUS, 0.0, TAU, 32,
+		Color(COLOR_AIM, 0.6 if dodge_ready else 0.25), 2.0)
+	var font := ThemeDB.fallback_font
+	var width := font.get_string_size("DASH", HORIZONTAL_ALIGNMENT_CENTER, -1, 16).x
+	draw_string(
+		font, center + Vector2(-width * 0.5, 6.0), "DASH",
+		HORIZONTAL_ALIGNMENT_CENTER, -1, 16,
+		Color(COLOR_AIM, 0.8 if dodge_ready else 0.35))
 
 
 func _draw_enemies(state: SimStateScript) -> void:
@@ -704,7 +812,8 @@ func _draw_death_panel(state: SimStateScript) -> void:
 		_draw_centered(
 			font, "%d NEW INTEL DECRYPTED" % _fresh_intel.size(), 428.0, 22,
 			COLOR_PROJECTILE)
-	_draw_centered(font, "[R]  ENTER THE BETWEEN", 480.0, 26, COLOR_AIM)
+	var prompt := "[TAP]  ENTER THE BETWEEN" if _touch.enabled else "[R]  ENTER THE BETWEEN"
+	_draw_centered(font, prompt, 480.0, 26, COLOR_AIM)
 
 
 func _draw_centered(
@@ -736,14 +845,35 @@ func _draw_between(arena: Rect2) -> void:
 
 	if _between_page == 1:
 		_draw_intel_page(arena, font)
-		_draw_centered(
-			font, "[W/S] SELECT      [Q] SENTIENCE TREE      [R] REDEPLOY",
-			668.0, 20, COLOR_AIM)
+		if _touch.enabled:
+			_draw_between_buttons(font, "SENTIENCE TREE")
+		else:
+			_draw_centered(
+				font, "[W/S] SELECT      [Q] SENTIENCE TREE      [R] REDEPLOY",
+				668.0, 20, COLOR_AIM)
 	else:
 		_draw_tree_page(arena, font)
-		_draw_centered(
-			font, "[A/D] SELECT      [E] INSTALL      [Q] INTEL      [R] REDEPLOY",
-			668.0, 20, COLOR_AIM)
+		if _touch.enabled:
+			_draw_between_buttons(font, "INTEL")
+		else:
+			_draw_centered(
+				font, "[A/D] SELECT      [E] INSTALL      [Q] INTEL      [R] REDEPLOY",
+				668.0, 20, COLOR_AIM)
+
+
+## Touch replaces the key hints with two tappable buttons; branch panels
+## and intel rows are tap targets themselves (tap selected panel = install).
+func _draw_between_buttons(font: Font, toggle_label: String) -> void:
+	var buttons := [[BETWEEN_BTN_TOGGLE, toggle_label], [BETWEEN_BTN_DEPLOY, "REDEPLOY"]]
+	for button: Array in buttons:
+		var rect: Rect2 = button[0]
+		var label: String = button[1]
+		draw_rect(rect, Color(COLOR_SEA, 0.7))
+		draw_rect(rect, COLOR_AIM, false, 2.0)
+		var width := font.get_string_size(label, HORIZONTAL_ALIGNMENT_CENTER, -1, 20).x
+		draw_string(
+			font, Vector2(rect.position.x + (rect.size.x - width) * 0.5, rect.position.y + 36.0),
+			label, HORIZONTAL_ALIGNMENT_CENTER, -1, 20, COLOR_AIM)
 
 
 func _draw_tree_page(arena: Rect2, font: Font) -> void:
