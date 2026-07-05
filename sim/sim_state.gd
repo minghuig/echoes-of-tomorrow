@@ -23,6 +23,9 @@ var dodge_vel: Vector2 = Vector2.ZERO
 var dodge_cooldown: int = 0
 var fire_cooldown: int = 0
 
+## Data fragments earned this run (1 per destroyed block).
+var fragments: int = 0
+
 var projectiles: Array[Projectile] = []
 var blocks: Array[Block] = []
 
@@ -39,6 +42,7 @@ func serialize() -> PackedByteArray:
 	_put_vec2(buf, dodge_vel)
 	buf.put_32(dodge_cooldown)
 	buf.put_32(fire_cooldown)
+	buf.put_32(fragments)
 	buf.put_u32(projectiles.size())
 	for p: Projectile in projectiles:
 		_put_vec2(buf, p.pos)

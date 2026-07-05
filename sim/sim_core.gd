@@ -134,6 +134,8 @@ func _step_projectiles() -> void:
 	for b: State.Block in state.blocks:
 		if b.hp > 0:
 			standing.append(b)
+		else:
+			state.fragments += 1
 	state.blocks = standing
 
 
