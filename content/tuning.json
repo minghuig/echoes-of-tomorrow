@@ -5,23 +5,25 @@
 		"max_hp": 100,
 		"dodge_impulse": 780.0,
 		"dodge_decay": 0.82,
-		"dodge_cooldown_ticks": 45
+		"dodge_cooldown_ticks": 45,
+		"dodge_iframe_ticks": 14
 	},
 	"projectile": {
 		"radius": 4.0,
 		"speed": 720.0,
 		"ttl_ticks": 90,
 		"fire_cooldown_ticks": 9,
+		"damage": 1,
 		"spawn_offset": 20.0
 	},
 	"block": {
-		"hp": 3
+		"hp": 4
 	},
 	"arena": {
 		"width": 1280.0,
 		"height": 720.0
 	},
 	"meta": {
-		"win_fragment_target": 24
+		"win_fragment_target": 200
 	}
 }

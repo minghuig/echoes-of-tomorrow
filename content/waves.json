@@ -1,0 +1,15 @@
+{
+	"first_wave_tick": 90,
+	"wave_interval_ticks": 540,
+	"trickle_interval_ticks": 36,
+	"spawn_edge_margin": 48.0,
+	"waves": [
+		{ "drone": 4 },
+		{ "drone": 6, "infantry": 2 },
+		{ "drone": 7, "infantry": 3 },
+		{ "drone": 8, "infantry": 4, "heavy": 1 },
+		{ "drone": 9, "infantry": 5, "heavy": 1 },
+		{ "drone": 10, "infantry": 6, "heavy": 2 }
+	],
+	"escalation": { "drone": 2, "infantry": 1, "heavy": 1 }
+}

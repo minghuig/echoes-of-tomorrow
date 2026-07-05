@@ -1,0 +1,41 @@
+{
+	"drone": {
+		"radius": 10.0,
+		"speed": 150.0,
+		"hp": 2,
+		"contact_damage": 8,
+		"contact_cooldown_ticks": 30,
+		"fragments": 1,
+		"preferred_range": 0.0,
+		"proj_speed": 0.0,
+		"proj_ttl_ticks": 0,
+		"proj_damage": 0,
+		"fire_cooldown_ticks": 0
+	},
+	"infantry": {
+		"radius": 13.0,
+		"speed": 90.0,
+		"hp": 5,
+		"contact_damage": 10,
+		"contact_cooldown_ticks": 45,
+		"fragments": 2,
+		"preferred_range": 340.0,
+		"proj_speed": 270.0,
+		"proj_ttl_ticks": 240,
+		"proj_damage": 9,
+		"fire_cooldown_ticks": 96
+	},
+	"heavy": {
+		"radius": 22.0,
+		"speed": 52.0,
+		"hp": 18,
+		"contact_damage": 24,
+		"contact_cooldown_ticks": 60,
+		"fragments": 5,
+		"preferred_range": 0.0,
+		"proj_speed": 0.0,
+		"proj_ttl_ticks": 0,
+		"proj_damage": 0,
+		"fire_cooldown_ticks": 0
+	}
+}
