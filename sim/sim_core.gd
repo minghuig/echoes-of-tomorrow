@@ -18,13 +18,13 @@ var state: State
 var rng: RandomNumberGenerator
 
 # Tuning values, loaded from content/tuning.json in setup().
-var _player_radius: float
+var player_radius: float
 var _player_speed: float
 var _player_max_hp: int
 var _dodge_impulse: float
 var _dodge_decay: float
 var _dodge_cooldown_ticks: int
-var _proj_radius: float
+var projectile_radius: float
 var _proj_speed: float
 var _proj_ttl_ticks: int
 var _fire_cooldown_ticks: int
@@ -42,13 +42,13 @@ func setup(seed_value: int) -> void:
 	var block: Dictionary = tuning["block"]
 	var arena: Dictionary = tuning["arena"]
 
-	_player_radius = player["radius"]
+	player_radius = player["radius"]
 	_player_speed = player["speed"]
 	_player_max_hp = int(player["max_hp"])
 	_dodge_impulse = player["dodge_impulse"]
 	_dodge_decay = player["dodge_decay"]
 	_dodge_cooldown_ticks = int(player["dodge_cooldown_ticks"])
-	_proj_radius = projectile["radius"]
+	projectile_radius = projectile["radius"]
 	_proj_speed = projectile["speed"]
 	_proj_ttl_ticks = int(projectile["ttl_ticks"])
 	_fire_cooldown_ticks = int(projectile["fire_cooldown_ticks"])
@@ -98,9 +98,9 @@ func _step_player(cmd: SimCommand) -> void:
 		state.dodge_vel = Vector2.ZERO
 
 	state.player_pos.x = clampf(
-		state.player_pos.x, _player_radius, state.arena_size.x - _player_radius)
+		state.player_pos.x, player_radius, state.arena_size.x - player_radius)
 	state.player_pos.y = clampf(
-		state.player_pos.y, _player_radius, state.arena_size.y - _player_radius)
+		state.player_pos.y, player_radius, state.arena_size.y - player_radius)
 
 	if state.fire_cooldown > 0:
 		state.fire_cooldown -= 1
@@ -122,7 +122,7 @@ func _step_projectiles() -> void:
 			continue
 		var hit := false
 		for b: State.Block in state.blocks:
-			if _circle_hits_aabb(p.pos, _proj_radius, b.pos, b.size):
+			if _circle_hits_aabb(p.pos, projectile_radius, b.pos, b.size):
 				b.hp -= 1
 				hit = true
 				break
@@ -139,9 +139,9 @@ func _step_projectiles() -> void:
 
 func _outside_arena(pos: Vector2) -> bool:
 	return (
-		pos.x < -_proj_radius or pos.y < -_proj_radius
-		or pos.x > state.arena_size.x + _proj_radius
-		or pos.y > state.arena_size.y + _proj_radius
+		pos.x < -projectile_radius or pos.y < -projectile_radius
+		or pos.x > state.arena_size.x + projectile_radius
+		or pos.y > state.arena_size.y + projectile_radius
 	)
 
 
