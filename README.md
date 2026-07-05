@@ -4,7 +4,7 @@ A 2D top-down roguelite about a combat AI trapped in an endless training simulat
 
 ## Run
 
-Open the project in Godot 4.6 (standard build, not .NET) and press **F5**. WASD / left stick to move, mouse / right stick to aim, LMB / right trigger to fire, Space / A (Cross) to dodge.
+Open the project in Godot 4.6 (standard build, not .NET) and press **F5**. WASD / left stick to move, mouse / right stick to aim, LMB / right trigger to fire, Space / A (Cross) to dodge, R / Start to reset the run.
 
 ## Tests
 
@@ -16,4 +16,4 @@ Runs a scripted ~600-tick command log twice from the same seed and compares stat
 
 ## Current milestone
 
-**M0** — capsule moves, aims at the mouse, fires, dodges; blocks break; destroying all blocks shows "CLEAR".
+**M1** — loop reset + persistent knowledge: R (or ~2s after CLEAR) starts a fresh run with a new seed; destroyed blocks award data fragments; run count and lifetime fragments persist to `user://save.json`; each finished run's `(seed, command log)` is retained in memory as the substrate for M3's ghost replay.
