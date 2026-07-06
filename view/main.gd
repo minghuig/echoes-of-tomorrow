@@ -60,6 +60,8 @@ const BETWEEN_BTN_DEPLOY := Rect2(680.0, 636.0, 280.0, 56.0)
 const SLOT_COUNT: int = 3
 const LEGACY_SAVE_PATH := "user://save.json"
 const ACTIVE_SLOT_PATH := "user://active_slot.json"
+## Pause-screen rows: the display setting (row 0) plus one per save slot.
+const PAUSE_ROW_COUNT: int = SLOT_COUNT + 1
 
 # Feel-pass tuning (view frames, not sim ticks — hit-stop frames skip the
 # view tick entirely, sim included, so logs stay aligned).
@@ -97,8 +99,11 @@ var _meta: RunMetaScript
 var _display: DisplaySettingsScript
 ## Which save file (1..SLOT_COUNT) `_meta` currently reads/writes.
 var _active_slot: int = 1
-## Which row the Pause screen's save-file list has highlighted.
-var _slot_cursor: int = 0
+## Focused row on the Pause screen: 0 = the display-size setting, 1..SLOT_COUNT
+## = the save-file slots. up/down moves this focus and nothing else, so the
+## display setting can only change when its own row is focused (left/right) —
+## navigating the slot list never touches it.
+var _pause_cursor: int = 0
 var _run_seed: int = 0
 var _run_loadout: Dictionary = {}
 var _command_log: Array[SimCommand] = []
@@ -216,7 +221,7 @@ func _input(event: InputEvent) -> void:
 
 
 ## Which device produced this event decides which button hints Overlay draws
-## (e.g. [START] vs [R]) — cosmetic only, never fed into a Command.
+## (e.g. [B] vs [R]) — cosmetic only, never fed into a Command.
 func _track_input_device(event: InputEvent) -> void:
 	if event is InputEventJoypadButton:
 		_using_gamepad = true
@@ -253,8 +258,7 @@ func _physics_process(_delta: float) -> void:
 	if _mode == Mode.BETWEEN:
 		_between_ticks += 1
 		if Input.is_action_just_pressed("pause"):
-			_mode_before_pause = Mode.BETWEEN
-			_mode = Mode.PAUSED
+			_open_pause(Mode.BETWEEN)
 			_present()
 			return
 		if Input.is_action_just_pressed("intel"):
@@ -296,8 +300,7 @@ func _physics_process(_delta: float) -> void:
 		return
 
 	if Input.is_action_just_pressed("pause"):
-		_mode_before_pause = Mode.PLAYING
-		_mode = Mode.PAUSED
+		_open_pause(Mode.PLAYING)
 		_present()
 		return
 
@@ -356,7 +359,7 @@ func _present() -> void:
 	_overlay.mode_before_pause = _mode_before_pause
 	_overlay.slot_summaries = _slot_summaries()
 	_overlay.active_slot = _active_slot
-	_overlay.slot_cursor = _slot_cursor
+	_overlay.pause_cursor = _pause_cursor
 
 	# Paused freezes on the last live frame (world/background/fx keep their
 	# last-drawn state) with the pause chrome drawn on top by Overlay — but
@@ -369,26 +372,49 @@ func _present() -> void:
 	_fx.visible = playing
 
 
-## Pause screen input: resume, cycle the window size (live, and saved
-## immediately), or pick a save-file slot — all reusing existing actions
-## (move_left/right, move_up/down, buy) since the Pause screen owns no others.
+## Enter the Pause screen from `from` (Playing or Between), focusing the top
+## row so navigation starts predictably.
+func _open_pause(from: Mode) -> void:
+	_mode_before_pause = from
+	_mode = Mode.PAUSED
+	_pause_cursor = 0
+
+
+## Pause screen input, structured as a focus cursor over the display setting
+## (row 0) and the save slots (rows 1..SLOT_COUNT): up/down only moves focus,
+## left/right adjusts the display *only* while its row is focused, and confirm
+## (buy) acts on the focused slot. So navigating the list can never change the
+## display by accident (the earlier always-live left/right binding did, badly
+## on an analog stick where up/down drifts into the left/right axis).
 func _process_paused_input() -> void:
-	if Input.is_action_just_pressed("move_left"):
-		_display.cycle(-1)
-		_display.apply(get_window())
-		_display.save_to_disk()
-	elif Input.is_action_just_pressed("move_right"):
-		_display.cycle(1)
-		_display.apply(get_window())
-		_display.save_to_disk()
-	elif Input.is_action_just_pressed("move_up"):
-		_slot_cursor = (_slot_cursor + SLOT_COUNT - 1) % SLOT_COUNT
-	elif Input.is_action_just_pressed("move_down"):
-		_slot_cursor = (_slot_cursor + 1) % SLOT_COUNT
-	elif Input.is_action_just_pressed("buy"):
-		_switch_slot(_slot_cursor + 1)
-	elif Input.is_action_just_pressed("pause"):
+	if Input.is_action_just_pressed("pause"):
 		_mode = _mode_before_pause
+		return
+	if Input.is_action_just_pressed("move_up"):
+		_pause_cursor = (_pause_cursor + PAUSE_ROW_COUNT - 1) % PAUSE_ROW_COUNT
+		return
+	if Input.is_action_just_pressed("move_down"):
+		_pause_cursor = (_pause_cursor + 1) % PAUSE_ROW_COUNT
+		return
+
+	if _pause_cursor == 0:
+		# Display row: left/right cycles window size (applied live and saved).
+		if Input.is_action_just_pressed("move_left"):
+			_display.cycle(-1)
+			_display.apply(get_window())
+			_display.save_to_disk()
+		elif Input.is_action_just_pressed("move_right"):
+			_display.cycle(1)
+			_display.apply(get_window())
+			_display.save_to_disk()
+	elif Input.is_action_just_pressed("buy"):
+		# Slot row: confirm the focused slot. The active slot just resumes
+		# (continue this file); another slot switches to it.
+		var slot := _pause_cursor
+		if slot == _active_slot:
+			_mode = _mode_before_pause
+		else:
+			_switch_slot(slot)
 
 
 ## Path for a given save-file slot (1..SLOT_COUNT).

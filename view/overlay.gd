@@ -76,7 +76,9 @@ var display_label: String = ""
 var mode_before_pause: int = MODE_PLAYING
 var slot_summaries: Array[String] = []
 var active_slot: int = 1
-var slot_cursor: int = 0
+## Focused Pause row: 0 = display setting, 1..N = save slots (mirrors
+## main.gd's _pause_cursor).
+var pause_cursor: int = 0
 
 # Post-reveal ending text, loaded from content/strings.json (see STRINGS_PATH).
 var _credits_lines: Array = []
@@ -293,41 +295,58 @@ func _draw_death_panel(state: SimStateScript) -> void:
 	_draw_centered(font, _confirm_hint("ENTER THE BETWEEN"), 480.0, 26, COLOR_AIM)
 
 
-## Frozen (mid-wave or mid-Between): dim the last live frame and show the
-## resume hint, the window-size picker, and the save-file slot list.
+## Frozen (mid-wave or mid-Between): dim the last live frame and show a single
+## focus-cursor menu — the display setting (row 0) and the save slots — so
+## up/down only ever moves the highlight, never a value.
 func _draw_paused(screen: Vector2) -> void:
 	draw_rect(Rect2(Vector2.ZERO, screen), Color(0.0, 0.0, 0.0, 0.6), true)
-	_draw_spaced_text(Vector2(screen.x * 0.5, 190.0), "PAUSED", 56, 10.0, COLOR_CLEAR)
+	_draw_spaced_text(Vector2(screen.x * 0.5, 180.0), "PAUSED", 56, 10.0, COLOR_CLEAR)
 	var font := ThemeDB.fallback_font
-	var resume := "[START]  RESUME" if using_gamepad else "[ESC]  RESUME"
-	_draw_centered(font, resume, 230.0, 22, COLOR_AIM)
 
-	var change := "[←/→]" if using_gamepad else "[A/D]"
-	_draw_centered(
-		font, "DISPLAY: %s      %s CHANGE" % [display_label, change], 274.0, 18, COLOR_HUD_TEXT)
+	var y := 260.0
+	var focused := pause_cursor == 0
+	# Left/right arrows on the display row only when it's focused, to signal
+	# it's the one that left/right adjusts.
+	var display_text := "DISPLAY   ◄ %s ►" % display_label if focused \
+		else "DISPLAY   %s" % display_label
+	_draw_pause_row(font, display_text, y, focused)
 
-	_draw_centered(font, "SAVE FILES", 320.0, 20, COLOR_CLEAR)
+	y += 44.0
 	for i in slot_summaries.size():
 		var slot_num := i + 1
-		var active_tag := "  (ACTIVE)" if slot_num == active_slot else ""
+		var active_tag := "   · ACTIVE" if slot_num == active_slot else ""
 		var line := "SLOT %d   %s%s" % [slot_num, slot_summaries[i], active_tag]
-		var color := COLOR_AIM if i == slot_cursor else COLOR_HUD_TEXT
-		_draw_centered(font, line, 354.0 + i * 28.0, 17, color)
+		_draw_pause_row(font, line, y + i * 32.0, pause_cursor == slot_num)
 
 	var vertical := "[▲/▼]" if using_gamepad else "[W/S]"
+	var horizontal := "[←/→]" if using_gamepad else "[A/D]"
 	var confirm := "[X]" if using_gamepad else "[E]"
+	var resume := "[START]" if using_gamepad else "[ESC]"
+	var hint_y := y + slot_summaries.size() * 32.0 + 30.0
 	_draw_centered(
-		font, "%s SELECT SLOT      %s SWITCH" % [vertical, confirm],
-		354.0 + slot_summaries.size() * 28.0 + 24.0, 16, Color(COLOR_HUD_TEXT, 0.7))
+		font, "%s MOVE      %s ADJUST DISPLAY" % [vertical, horizontal],
+		hint_y, 16, Color(COLOR_HUD_TEXT, 0.75))
+	_draw_centered(
+		font, "%s SWITCH FILE      %s RESUME" % [confirm, resume],
+		hint_y + 26.0, 16, Color(COLOR_HUD_TEXT, 0.75))
+
+
+## One focusable Pause row: a ▶ marker + brighter color when focused.
+func _draw_pause_row(font: Font, text: String, y: float, focused: bool) -> void:
+	var color := COLOR_AIM if focused else COLOR_HUD_TEXT
+	var marker := "▶  " if focused else "    "
+	_draw_centered(font, marker + text, y, 20, color)
 
 
 ## The "confirm/continue" hint: touch beats gamepad beats keyboard, matching
-## which input source is actually available/active.
+## which input source is actually available/active. On a gamepad this is the
+## `reset` action (redeploy / confirm death / re-enter) — bound to B, not
+## Start (Start is `pause`), so the two never collide in the Between.
 func _confirm_hint(label: String) -> String:
 	if _touch_enabled():
 		return "[TAP]  %s" % label
 	if using_gamepad:
-		return "[START]  %s" % label
+		return "[B]  %s" % label
 	return "[R]  %s" % label
 
 
@@ -355,17 +374,27 @@ func _draw_between(screen: Vector2) -> void:
 		if _touch_enabled():
 			_draw_between_buttons(font, "SENTIENCE TREE")
 		else:
-			var hint := "[▲/▼] SELECT      [Y] SENTIENCE TREE      [START] REDEPLOY" \
+			var hint := "[▲/▼] SELECT      [Y] SENTIENCE TREE      [B] REDEPLOY" \
 				if using_gamepad else "[W/S] SELECT      [Q] SENTIENCE TREE      [R] REDEPLOY"
 			_draw_centered(font, hint, 668.0, 20, COLOR_AIM)
+			_draw_between_options_hint(font)
 	else:
 		_draw_tree_page(arena, font)
 		if _touch_enabled():
 			_draw_between_buttons(font, "INTEL")
 		else:
-			var hint := "[←/→] SELECT      [X] INSTALL      [Y] INTEL      [START] REDEPLOY" \
+			var hint := "[←/→] SELECT      [X] INSTALL      [Y] INTEL      [B] REDEPLOY" \
 				if using_gamepad else "[A/D] SELECT      [E] INSTALL      [Q] INTEL      [R] REDEPLOY"
 			_draw_centered(font, hint, 668.0, 20, COLOR_AIM)
+			_draw_between_options_hint(font)
+
+
+## Below the Between action row: how to reach the Pause/options screen (window
+## size + save files). Its own line so the reveal — Start/Esc opens options —
+## reads separately from the redeploy action.
+func _draw_between_options_hint(font: Font) -> void:
+	var options := "[START] OPTIONS" if using_gamepad else "[ESC] OPTIONS"
+	_draw_centered(font, options, 694.0, 16, Color(COLOR_HUD_TEXT, 0.7))
 
 
 func _draw_between_buttons(font: Font, toggle_label: String) -> void:

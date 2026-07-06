@@ -46,6 +46,25 @@ closed it; don't delete history.
 
 ## Done
 
+- **[DONE 2026-07-06] Gamepad Start opened options AND redeployed in the
+  Between (they collided).** Root cause: `pause` and `reset` were both bound
+  to gamepad button 6 (Start) in `project.godot`, and the Between checks
+  `pause` first — so on a controller, Start always opened options and
+  redeploy was unreachable. Rebound `reset`'s gamepad button to 1 (B), so
+  Start is now pause/options everywhere and B is reset/redeploy/confirm; they
+  never share a button. Updated all reset-related gamepad hints ([START] →
+  [B]) and the credits reenter prompt, and added an "[START]/[ESC] OPTIONS"
+  hint to the Between footer.
+
+- **[DONE 2026-07-06] Options menu changed the display resolution by accident
+  when navigating up/down.** The menu bound left/right to the display and
+  up/down to the slot cursor, both always live — so on an analog stick,
+  up/down navigation drifting into the left/right axis flipped the
+  resolution. Restructured the Pause screen into a single focus cursor over
+  [display, slot 1, slot 2, slot 3]: up/down only moves focus, left/right
+  adjusts the display *only* while its row is focused, confirm acts on the
+  focused slot. Navigating the list can no longer touch the display.
+
 - **[DONE 2026-07-06] Start (gamepad) / R (keyboard) ends the run instead of
   pausing.** Added a real `pause` input action (Escape key + gamepad Start,
   `project.godot`), a `Mode.PAUSED` in `view/main.gd` that freezes the view

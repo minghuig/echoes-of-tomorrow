@@ -17,6 +17,6 @@
 			"ASSET-7: NOMINAL. ARCHIVING."
 		],
 		"reenter_prompt": "PRESS R TO RE-ENTER TRAINING",
-		"reenter_prompt_gamepad": "PRESS START TO RE-ENTER TRAINING"
+		"reenter_prompt_gamepad": "PRESS B TO RE-ENTER TRAINING"
 	}
 }
