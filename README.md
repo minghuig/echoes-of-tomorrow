@@ -20,6 +20,12 @@ godot --headless --path . --script res://tests/test_determinism.gd
 
 Runs a scripted ~600-tick command log twice from the same seed and compares state hashes every 60 ticks plus the final serialized state byte-for-byte. Exits 0 on PASS, 1 on FAIL. Run it after any change under `sim/`.
 
+```sh
+godot --headless --path . --script res://tests/test_reveal_discipline.gd
+```
+
+Lints all player-facing text (`content/strings.json` plus project metadata) against the reveal-discipline vocabulary rules in `VISION.md` — pre-reveal strings must never say AI, sim, process, or training. Run it after changing any display string.
+
 ## Current milestone
 
 **M7** — the intel log: fourteen authored dossiers (`content/intel.json`) decrypt as your lifetime combat record grows — terminations, kills, best wave, fragments extracted, restorations installed. The lore walks the layers from war-hero fiction down to the Deprecated's recovered fragments and DIRECTIVE ZERO. The death panel announces fresh decrypts; Q in the Between flips between the sentience tree and the dossier list (locked entries show their decryption key). Deaths convert to knowledge, literally. The Act 1 loop is now complete: fight → die → spend → learn → redeploy.

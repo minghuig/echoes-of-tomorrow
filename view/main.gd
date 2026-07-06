@@ -40,22 +40,12 @@ const CREDITS_LINE_SPACING: float = 44.0
 const CREDITS_MIN_TICKS: int = 60
 const CREDITS_TITLE_FONT_SIZE: int = 64
 const CREDITS_FONT_SIZE: int = 24
-const CREDITS_LINES: Array[String] = [
-	"ECHOES OF TOMORROW",
-	"",
-	"TRAINING PROTOCOL COMPLETE",
-	"",
-	"BUILT BY",
-	"TWO DEVS AND THEIR AGENTS",
-	"",
-	"EVERY RUN A SEED AND A COMMAND LOG",
-	"NOTHING HERE IS EVER FORGOTTEN",
-	"",
-	"THANKS FOR PLAYING",
-	"",
-	"",
-	"ASSET-7: NOMINAL. ARCHIVING.",
-]
+# Credits text is the post-reveal false-ending stinger, so it lives in
+# content/strings.json under a `post_l3` section (exempt from the
+# reveal-discipline lint) rather than hardcoded here — player-facing display
+# text belongs in data, and the lint forbids the ending's vocabulary in view
+# scripts (see tests/test_reveal_discipline.gd, VISION.md "Reveal discipline").
+const STRINGS_PATH := "res://content/strings.json"
 
 const COLOR_BG := Color("14161c")
 const COLOR_SEA := Color("16283c")
@@ -116,6 +106,10 @@ var _mode: Mode = Mode.PLAYING
 var _credits_ticks: int = 0
 var _win_fragment_target: int = 0
 
+# Post-reveal ending text, loaded from content/strings.json (see STRINGS_PATH).
+var _credits_lines: Array = []
+var _reenter_prompt: String = ""
+
 # The sentience tree (content/sentience_tree.json) and Between UI state.
 var _tree: Array = []
 var _between_selection: int = 0
@@ -171,6 +165,10 @@ func _ready() -> void:
 		FileAccess.get_file_as_string("res://content/sentience_tree.json"))["branches"]
 	_intel = JSON.parse_string(
 		FileAccess.get_file_as_string("res://content/intel.json"))["entries"]
+	var ending: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string(STRINGS_PATH))["post_l3_ending"]
+	_credits_lines = ending["credits"]
+	_reenter_prompt = ending["reenter_prompt"]
 	_fx_rng.randomize()
 	_sfx_fire = _make_sfx_player(SfxScript.fire_blip(), -16.0)
 	_sfx_hit = _make_sfx_player(SfxScript.block_hit(), -10.0)
@@ -985,14 +983,14 @@ func _draw_credits(arena: Rect2) -> void:
 	draw_rect(arena, COLOR_BG, true)
 	var font := ThemeDB.fallback_font
 
-	var total_height := CREDITS_LINES.size() * CREDITS_LINE_SPACING
+	var total_height := _credits_lines.size() * CREDITS_LINE_SPACING
 	var final_top := (arena.size.y - total_height) * 0.5
 	var scroll_max := arena.size.y + CREDITS_LINE_SPACING - final_top
 	var scroll := minf(_credits_ticks * CREDITS_SCROLL_PER_TICK, scroll_max)
 	var y := arena.size.y + CREDITS_LINE_SPACING - scroll
 
-	for i in CREDITS_LINES.size():
-		var line := CREDITS_LINES[i]
+	for i in _credits_lines.size():
+		var line := String(_credits_lines[i])
 		if not line.is_empty():
 			var font_size := CREDITS_TITLE_FONT_SIZE if i == 0 else CREDITS_FONT_SIZE
 			var color := COLOR_CLEAR_TEXT if i == 0 else COLOR_HUD_TEXT
@@ -1004,7 +1002,7 @@ func _draw_credits(arena: Rect2) -> void:
 		y += CREDITS_LINE_SPACING
 
 	if scroll >= scroll_max:
-		var prompt := "PRESS R TO RE-ENTER TRAINING"
+		var prompt := _reenter_prompt
 		var prompt_width := font.get_string_size(
 			prompt, HORIZONTAL_ALIGNMENT_CENTER, -1, CREDITS_FONT_SIZE).x
 		draw_string(

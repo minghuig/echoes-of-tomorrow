@@ -8,7 +8,7 @@ on:
 
 jobs:
   determinism-test:
-    name: Determinism test
+    name: Headless tests
     runs-on: ubuntu-latest
     container:
       image: barichello/godot-ci:4.6.3
@@ -21,6 +21,9 @@ jobs:
 
       - name: Run ghost replay test
         run: godot --headless --path . --script res://tests/test_ghost_replay.gd
+
+      - name: Run reveal-discipline lint
+        run: godot --headless --path . --script res://tests/test_reveal_discipline.gd
 
   web-export:
     name: Web export
