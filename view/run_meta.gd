@@ -66,10 +66,12 @@ func _condition_met(condition: Dictionary) -> bool:
 	return false
 
 
-func load_from_disk() -> void:
-	if not FileAccess.file_exists(SAVE_PATH):
+## path defaults to the single legacy save slot; callers managing multiple
+## save-file slots (see main.gd) pass an explicit user://save_slot_N.json.
+func load_from_disk(path: String = SAVE_PATH) -> void:
+	if not FileAccess.file_exists(path):
 		return
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if parsed is Dictionary:
 		run_count = int(parsed.get("run_count", 0))
 		total_fragments = int(parsed.get("total_fragments", 0))
@@ -90,10 +92,10 @@ func load_from_disk() -> void:
 				unlocked_intel.append(String(id))
 
 
-func save_to_disk() -> void:
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+func save_to_disk(path: String = SAVE_PATH) -> void:
+	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
-		push_warning("RunMeta: cannot write " + SAVE_PATH)
+		push_warning("RunMeta: cannot write " + path)
 		return
 	file.store_string(JSON.stringify({
 		"run_count": run_count,

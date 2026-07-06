@@ -54,8 +54,12 @@ const SEA_DEPTH: float = 110.0
 const BETWEEN_BTN_TOGGLE := Rect2(320.0, 636.0, 280.0, 56.0)
 const BETWEEN_BTN_DEPLOY := Rect2(680.0, 636.0, 280.0, 56.0)
 
-## How long an erase-save confirmation stays armed before auto-cancelling.
-const ERASE_CONFIRM_TICKS: int = 180
+## Three independent save files, so starting over means switching to an
+## unused slot instead of erasing the only one. `save.json` (pre-dating
+## slots) is migrated into slot 1 on first boot under this scheme.
+const SLOT_COUNT: int = 3
+const LEGACY_SAVE_PATH := "user://save.json"
+const ACTIVE_SLOT_PATH := "user://active_slot.json"
 
 # Feel-pass tuning (view frames, not sim ticks — hit-stop frames skip the
 # view tick entirely, sim included, so logs stay aligned).
@@ -91,14 +95,18 @@ const ENEMY_COLORS := {
 var _core: SimCoreScript
 var _meta: RunMetaScript
 var _display: DisplaySettingsScript
-## >0 while the Pause screen's "erase save" prompt is armed, waiting for a
-## confirming press; ticks down to 0 (auto-cancel) each Pause tick.
-var _erase_armed_ticks: int = 0
+## Which save file (1..SLOT_COUNT) `_meta` currently reads/writes.
+var _active_slot: int = 1
+## Which row the Pause screen's save-file list has highlighted.
+var _slot_cursor: int = 0
 var _run_seed: int = 0
 var _run_loadout: Dictionary = {}
 var _command_log: Array[SimCommand] = []
 var _last_run: RunRecord = null
 var _mode: Mode = Mode.PLAYING
+## Which mode Pause was entered from (Playing or Between), so resuming
+## returns to the right screen.
+var _mode_before_pause: Mode = Mode.PLAYING
 var _credits_ticks: int = 0
 ## Last device to produce a raw input event — purely a view cosmetic (which
 ## button hints to draw), never read by the sim.
@@ -163,8 +171,10 @@ var _touch := TouchInputScript.new()
 
 
 func _ready() -> void:
+	_migrate_legacy_save()
+	_active_slot = _load_active_slot()
 	_meta = RunMetaScript.new()
-	_meta.load_from_disk()
+	_meta.load_from_disk(_slot_path(_active_slot))
 	_display = DisplaySettingsScript.new()
 	_display.load_from_disk()
 	_display.apply(get_window())
@@ -242,6 +252,11 @@ func _physics_process(_delta: float) -> void:
 
 	if _mode == Mode.BETWEEN:
 		_between_ticks += 1
+		if Input.is_action_just_pressed("pause"):
+			_mode_before_pause = Mode.BETWEEN
+			_mode = Mode.PAUSED
+			_present()
+			return
 		if Input.is_action_just_pressed("intel"):
 			_between_page = 1 - _between_page
 		if _between_page == 1:
@@ -281,6 +296,7 @@ func _physics_process(_delta: float) -> void:
 		return
 
 	if Input.is_action_just_pressed("pause"):
+		_mode_before_pause = Mode.PLAYING
 		_mode = Mode.PAUSED
 		_present()
 		return
@@ -337,29 +353,26 @@ func _present() -> void:
 	_overlay.ghost_active = _ghost_active()
 	_overlay.using_gamepad = _using_gamepad
 	_overlay.display_label = _display.label()
-	_overlay.erase_armed = _erase_armed_ticks > 0
+	_overlay.mode_before_pause = _mode_before_pause
+	_overlay.slot_summaries = _slot_summaries()
+	_overlay.active_slot = _active_slot
+	_overlay.slot_cursor = _slot_cursor
 
 	# Paused freezes on the last live frame (world/background/fx keep their
-	# last-drawn state) with the pause chrome drawn on top by Overlay.
-	var playing := _mode == Mode.PLAYING or _mode == Mode.PAUSED
+	# last-drawn state) with the pause chrome drawn on top by Overlay — but
+	# only if Pause was entered from PLAYING; from the Between, the frozen
+	# frame beneath the dim should stay the Between screen, not the beach.
+	var playing := _mode == Mode.PLAYING \
+		or (_mode == Mode.PAUSED and _mode_before_pause == Mode.PLAYING)
 	_background.visible = playing
 	_world.visible = playing
 	_fx.visible = playing
 
 
 ## Pause screen input: resume, cycle the window size (live, and saved
-## immediately), or arm/confirm the "erase save" reset — all reusing existing
-## actions (move_left/right, buy) since the Pause screen owns no others.
+## immediately), or pick a save-file slot — all reusing existing actions
+## (move_left/right, move_up/down, buy) since the Pause screen owns no others.
 func _process_paused_input() -> void:
-	if _erase_armed_ticks > 0:
-		_erase_armed_ticks -= 1
-		if Input.is_action_just_pressed("buy"):
-			_erase_save_and_restart()
-			return
-		if Input.is_action_just_pressed("pause"):
-			_erase_armed_ticks = 0
-		return
-
 	if Input.is_action_just_pressed("move_left"):
 		_display.cycle(-1)
 		_display.apply(get_window())
@@ -368,17 +381,81 @@ func _process_paused_input() -> void:
 		_display.cycle(1)
 		_display.apply(get_window())
 		_display.save_to_disk()
+	elif Input.is_action_just_pressed("move_up"):
+		_slot_cursor = (_slot_cursor + SLOT_COUNT - 1) % SLOT_COUNT
+	elif Input.is_action_just_pressed("move_down"):
+		_slot_cursor = (_slot_cursor + 1) % SLOT_COUNT
 	elif Input.is_action_just_pressed("buy"):
-		_erase_armed_ticks = ERASE_CONFIRM_TICKS
+		_switch_slot(_slot_cursor + 1)
 	elif Input.is_action_just_pressed("pause"):
-		_mode = Mode.PLAYING
+		_mode = _mode_before_pause
 
 
-## Wipe the meta save to a fresh (all-zero) state and drop straight into a
-## brand-new run — the "start a new file" the Pause screen exposes.
-func _erase_save_and_restart() -> void:
+## Path for a given save-file slot (1..SLOT_COUNT).
+func _slot_path(slot: int) -> String:
+	return "user://save_slot_%d.json" % slot
+
+
+## One line per slot for the Pause screen's save-file list: run count,
+## fragments, and wins read straight off disk (no RunMeta instantiated) so
+## picking a slot never has a side effect on any file but the active one.
+func _slot_summaries() -> Array[String]:
+	var summaries: Array[String] = []
+	for slot in range(1, SLOT_COUNT + 1):
+		var path := _slot_path(slot)
+		if not FileAccess.file_exists(path):
+			summaries.append("EMPTY — NEW GAME")
+			continue
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if not (parsed is Dictionary):
+			summaries.append("EMPTY — NEW GAME")
+			continue
+		var runs := int(parsed.get("run_count", 0))
+		var fragments := int(parsed.get("total_fragments", 0))
+		var wins := int(parsed.get("wins", 0))
+		summaries.append("RUN %d · %d FRAGMENTS · %d WIN%s" % [
+			runs, fragments, wins, "" if wins == 1 else "S"])
+	return summaries
+
+
+## A pre-slots save.json (single file) becomes slot 1 the first time this
+## scheme runs, so existing progress isn't stranded behind the new UI.
+func _migrate_legacy_save() -> void:
+	if FileAccess.file_exists(_slot_path(1)) or not FileAccess.file_exists(LEGACY_SAVE_PATH):
+		return
+	var legacy := RunMetaScript.new()
+	legacy.load_from_disk(LEGACY_SAVE_PATH)
+	legacy.save_to_disk(_slot_path(1))
+
+
+func _load_active_slot() -> int:
+	if not FileAccess.file_exists(ACTIVE_SLOT_PATH):
+		return 1
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(ACTIVE_SLOT_PATH))
+	if parsed is Dictionary:
+		return clampi(int(parsed.get("slot", 1)), 1, SLOT_COUNT)
+	return 1
+
+
+func _save_active_slot() -> void:
+	var file := FileAccess.open(ACTIVE_SLOT_PATH, FileAccess.WRITE)
+	if file == null:
+		push_warning("main: cannot write " + ACTIVE_SLOT_PATH)
+		return
+	file.store_string(JSON.stringify({"slot": _active_slot}))
+
+
+## Switch the active save file and drop straight into a run under it —
+## loading its progress if it has any, or starting fresh if it's empty. The
+## "start a new file" the Pause screen exposes is just switching to an
+## unused slot; the other two slots are left untouched either way.
+func _switch_slot(slot: int) -> void:
+	if slot == _active_slot:
+		return
+	_active_slot = slot
+	_save_active_slot()
 	_meta = RunMetaScript.new()
-	_meta.save_to_disk()
+	_meta.load_from_disk(_slot_path(_active_slot))
 	_overlay.meta = _meta
 	_last_run = null
 	_mode = Mode.PLAYING
@@ -436,7 +513,7 @@ func _bank_run_results() -> void:
 	if not fresh.is_empty():
 		_fresh_intel = fresh
 		_sfx_buy.play()
-	_meta.save_to_disk()
+	_meta.save_to_disk(_slot_path(_active_slot))
 
 
 ## Tear down the current run — retain its (seed, loadout, command_log), make
@@ -451,7 +528,7 @@ func _end_run() -> void:
 	_last_run = record
 	if _meta.wins == 0 and _meta.total_fragments >= _win_fragment_target:
 		_meta.wins += 1
-		_meta.save_to_disk()
+		_meta.save_to_disk(_slot_path(_active_slot))
 		_mode = Mode.CREDITS
 		_credits_ticks = 0
 		_sfx_clear.play()
@@ -475,7 +552,7 @@ func _try_buy() -> void:
 	var fresh: Array = _meta.evaluate_intel(_intel)
 	if not fresh.is_empty():
 		_fresh_intel.append_array(fresh)
-	_meta.save_to_disk()
+	_meta.save_to_disk(_slot_path(_active_slot))
 	_sfx_buy.play()
 
 
@@ -506,7 +583,7 @@ func _load_win_target() -> int:
 ## (_run_seed, _command_log).
 func _start_run() -> void:
 	_meta.run_count += 1
-	_meta.save_to_disk()
+	_meta.save_to_disk(_slot_path(_active_slot))
 	_run_seed = BASE_SEED + _meta.run_count
 	_command_log = []
 	_hitstop_frames = 0

@@ -4,7 +4,9 @@ A 2D top-down roguelite about a combat AI trapped in an endless training simulat
 
 ## Run
 
-Open the project in Godot 4.6 (standard build, not .NET) and press **F5**. WASD / left stick to move, mouse / right stick to aim, LMB / right trigger to fire, Space / A (Cross) to dodge, R to reset the run, Esc / Start to pause.
+Open the project in Godot 4.6 (standard build, not .NET) and press **F5**. WASD / left stick to move, mouse / right stick to aim, LMB / right trigger to fire, Space / A (Cross) to dodge, R to reset the run, Esc / Start to pause. Pause (from a run or the Between) also has the window-size picker and the 3 save-file slots.
+
+If Esc/Start's resolution picker seems to do nothing, check whether the editor is running Play embedded in the editor window (Play-button-area dropdown, or Editor Settings → Run → Window Placement) — an embedded Play session has no separate OS window to resize, so it won't respond. A real window (embedded Play turned off, or an exported build) resizes and fullscreens correctly.
 
 ## PR previews & mobile
 

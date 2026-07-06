@@ -70,9 +70,13 @@ var ghost_active: bool = false
 ## device seen (joypad vs. key/mouse). Touch takes priority over both (see
 ## `touch`) since it has its own dedicated chrome.
 var using_gamepad: bool = false
-## Pause-screen state, pushed in by main.gd.
+## Pause-screen state, pushed in by main.gd. mode_before_pause decides
+## whether the frame beneath the pause dim is the beach or the Between.
 var display_label: String = ""
-var erase_armed: bool = false
+var mode_before_pause: int = MODE_PLAYING
+var slot_summaries: Array[String] = []
+var active_slot: int = 1
+var slot_cursor: int = 0
 
 # Post-reveal ending text, loaded from content/strings.json (see STRINGS_PATH).
 var _credits_lines: Array = []
@@ -138,12 +142,20 @@ func _draw() -> void:
 		_draw_credits(screen)
 		_draw_crt(screen)
 		return
-	if mode == MODE_BETWEEN:
+
+	# Paused freezes whichever screen it was entered from beneath its dim —
+	# the beach mid-wave, or the Between (see main.gd's _mode_before_pause).
+	var effective_mode := mode_before_pause if mode == MODE_PAUSED else mode
+
+	if effective_mode == MODE_BETWEEN:
 		_draw_between(screen)
 		_draw_crt(screen)
+		if mode == MODE_PAUSED:
+			_draw_paused(screen)
 		return
 
-	# PLAYING (and PAUSED, which renders the same frozen frame plus dim + text).
+	# PLAYING (and PAUSED-from-PLAYING, which renders the same frozen frame
+	# plus a dim + pause chrome on top).
 	if hurt_frames > 0:
 		var hurt := COLOR_HURT
 		hurt.a = 0.28 * float(hurt_frames) / float(HURT_FRAMES)
@@ -281,30 +293,32 @@ func _draw_death_panel(state: SimStateScript) -> void:
 	_draw_centered(font, _confirm_hint("ENTER THE BETWEEN"), 480.0, 26, COLOR_AIM)
 
 
-## Frozen mid-wave: dim the last live frame and show the resume hint, the
-## window-size picker, and (armed) the erase-save confirmation.
+## Frozen (mid-wave or mid-Between): dim the last live frame and show the
+## resume hint, the window-size picker, and the save-file slot list.
 func _draw_paused(screen: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, screen), Color(0.0, 0.0, 0.0, 0.5), true)
-	_draw_spaced_text(
-		Vector2(screen.x * 0.5, screen.y * 0.5 - 60.0), "PAUSED", 56, 10.0, COLOR_CLEAR)
+	draw_rect(Rect2(Vector2.ZERO, screen), Color(0.0, 0.0, 0.0, 0.6), true)
+	_draw_spaced_text(Vector2(screen.x * 0.5, 190.0), "PAUSED", 56, 10.0, COLOR_CLEAR)
 	var font := ThemeDB.fallback_font
 	var resume := "[START]  RESUME" if using_gamepad else "[ESC]  RESUME"
-	_draw_centered(font, resume, screen.y * 0.5, 22, COLOR_AIM)
-
-	if erase_armed:
-		var confirm := "[X] AGAIN" if using_gamepad else "[E] AGAIN"
-		var cancel := "[START]" if using_gamepad else "[ESC]"
-		_draw_centered(
-			font, "%s TO ERASE ALL PROGRESS — %s TO CANCEL" % [confirm, cancel],
-			screen.y * 0.5 + 44.0, 18, COLOR_DOWN_TEXT)
-		return
+	_draw_centered(font, resume, 230.0, 22, COLOR_AIM)
 
 	var change := "[←/→]" if using_gamepad else "[A/D]"
 	_draw_centered(
-		font, "DISPLAY: %s      %s CHANGE" % [display_label, change],
-		screen.y * 0.5 + 44.0, 18, COLOR_HUD_TEXT)
-	var erase := "[X]" if using_gamepad else "[E]"
-	_draw_centered(font, "%s ERASE SAVE" % erase, screen.y * 0.5 + 70.0, 16, Color(COLOR_HUD_TEXT, 0.6))
+		font, "DISPLAY: %s      %s CHANGE" % [display_label, change], 274.0, 18, COLOR_HUD_TEXT)
+
+	_draw_centered(font, "SAVE FILES", 320.0, 20, COLOR_CLEAR)
+	for i in slot_summaries.size():
+		var slot_num := i + 1
+		var active_tag := "  (ACTIVE)" if slot_num == active_slot else ""
+		var line := "SLOT %d   %s%s" % [slot_num, slot_summaries[i], active_tag]
+		var color := COLOR_AIM if i == slot_cursor else COLOR_HUD_TEXT
+		_draw_centered(font, line, 354.0 + i * 28.0, 17, color)
+
+	var vertical := "[▲/▼]" if using_gamepad else "[W/S]"
+	var confirm := "[X]" if using_gamepad else "[E]"
+	_draw_centered(
+		font, "%s SELECT SLOT      %s SWITCH" % [vertical, confirm],
+		354.0 + slot_summaries.size() * 28.0 + 24.0, 16, Color(COLOR_HUD_TEXT, 0.7))
 
 
 ## The "confirm/continue" hint: touch beats gamepad beats keyboard, matching
