@@ -17,6 +17,7 @@ const SimCoreScript := preload("res://sim/sim_core.gd")
 const SimStateScript := preload("res://sim/sim_state.gd")
 const SimCommand := preload("res://sim/command.gd")
 const RunMetaScript := preload("res://view/run_meta.gd")
+const DisplaySettingsScript := preload("res://view/display_settings.gd")
 const SfxScript := preload("res://view/sfx.gd")
 const TouchInputScript := preload("res://view/touch_input.gd")
 const BackgroundScript := preload("res://view/background.gd")
@@ -32,12 +33,15 @@ class RunRecord extends RefCounted:
 	var command_log: Array[SimCommand] = []
 	var loadout: Dictionary = {}
 
-## View flow: normal play, the Between (sentience tree, entered after every
-## death), or the credits roll after the meta win.
-enum Mode { PLAYING, BETWEEN, CREDITS }
+## View flow: normal play, paused (frozen mid-wave), the Between (sentience
+## tree, entered after every death), or the credits roll after the meta win.
+enum Mode { PLAYING, BETWEEN, CREDITS, PAUSED }
 
 const BASE_SEED: int = 7
 const STICK_AIM_DEADZONE: float = 0.35
+## Joypad axis motion below this magnitude doesn't count as "using a gamepad"
+## (stick drift/noise), for choosing which button hints to draw.
+const GAMEPAD_DETECT_DEADZONE: float = 0.5
 
 ## Ignore the skip input for the first second so the R that ended the run
 ## can't also dismiss the credits.
@@ -49,6 +53,9 @@ const SEA_DEPTH: float = 110.0
 ## Tap targets for the Between on touch devices (replace the key hints).
 const BETWEEN_BTN_TOGGLE := Rect2(320.0, 636.0, 280.0, 56.0)
 const BETWEEN_BTN_DEPLOY := Rect2(680.0, 636.0, 280.0, 56.0)
+
+## How long an erase-save confirmation stays armed before auto-cancelling.
+const ERASE_CONFIRM_TICKS: int = 180
 
 # Feel-pass tuning (view frames, not sim ticks — hit-stop frames skip the
 # view tick entirely, sim included, so logs stay aligned).
@@ -83,12 +90,19 @@ const ENEMY_COLORS := {
 
 var _core: SimCoreScript
 var _meta: RunMetaScript
+var _display: DisplaySettingsScript
+## >0 while the Pause screen's "erase save" prompt is armed, waiting for a
+## confirming press; ticks down to 0 (auto-cancel) each Pause tick.
+var _erase_armed_ticks: int = 0
 var _run_seed: int = 0
 var _run_loadout: Dictionary = {}
 var _command_log: Array[SimCommand] = []
 var _last_run: RunRecord = null
 var _mode: Mode = Mode.PLAYING
 var _credits_ticks: int = 0
+## Last device to produce a raw input event — purely a view cosmetic (which
+## button hints to draw), never read by the sim.
+var _using_gamepad: bool = false
 var _win_fragment_target: int = 0
 
 # The sentience tree (content/sentience_tree.json) and Between UI state.
@@ -151,6 +165,9 @@ var _touch := TouchInputScript.new()
 func _ready() -> void:
 	_meta = RunMetaScript.new()
 	_meta.load_from_disk()
+	_display = DisplaySettingsScript.new()
+	_display.load_from_disk()
+	_display.apply(get_window())
 	_win_fragment_target = _load_win_target()
 	_tree = JSON.parse_string(
 		FileAccess.get_file_as_string("res://content/sentience_tree.json"))["branches"]
@@ -185,6 +202,19 @@ func _ready() -> void:
 
 func _input(event: InputEvent) -> void:
 	_touch.handle(event)
+	_track_input_device(event)
+
+
+## Which device produced this event decides which button hints Overlay draws
+## (e.g. [START] vs [R]) — cosmetic only, never fed into a Command.
+func _track_input_device(event: InputEvent) -> void:
+	if event is InputEventJoypadButton:
+		_using_gamepad = true
+	elif event is InputEventJoypadMotion:
+		if absf((event as InputEventJoypadMotion).axis_value) > GAMEPAD_DETECT_DEADZONE:
+			_using_gamepad = true
+	elif event is InputEventKey or event is InputEventMouseButton:
+		_using_gamepad = false
 
 
 func _make_sfx_player(stream: AudioStreamWAV, volume_db: float) -> AudioStreamPlayer:
@@ -196,6 +226,11 @@ func _make_sfx_player(stream: AudioStreamWAV, volume_db: float) -> AudioStreamPl
 
 
 func _physics_process(_delta: float) -> void:
+	if _mode == Mode.PAUSED:
+		_process_paused_input()
+		_present()
+		return
+
 	if _mode == Mode.CREDITS:
 		_credits_ticks += 1
 		if _credits_ticks >= CREDITS_MIN_TICKS and (
@@ -242,6 +277,11 @@ func _physics_process(_delta: float) -> void:
 		_decay_fx()
 		if Input.is_action_just_pressed("reset") or _consumed_tap():
 			_end_run()
+		_present()
+		return
+
+	if Input.is_action_just_pressed("pause"):
+		_mode = Mode.PAUSED
 		_present()
 		return
 
@@ -295,11 +335,54 @@ func _present() -> void:
 	_overlay.hurt_frames = _hurt_frames
 	_overlay.credits_ticks = _credits_ticks
 	_overlay.ghost_active = _ghost_active()
+	_overlay.using_gamepad = _using_gamepad
+	_overlay.display_label = _display.label()
+	_overlay.erase_armed = _erase_armed_ticks > 0
 
-	var playing := _mode == Mode.PLAYING
+	# Paused freezes on the last live frame (world/background/fx keep their
+	# last-drawn state) with the pause chrome drawn on top by Overlay.
+	var playing := _mode == Mode.PLAYING or _mode == Mode.PAUSED
 	_background.visible = playing
 	_world.visible = playing
 	_fx.visible = playing
+
+
+## Pause screen input: resume, cycle the window size (live, and saved
+## immediately), or arm/confirm the "erase save" reset — all reusing existing
+## actions (move_left/right, buy) since the Pause screen owns no others.
+func _process_paused_input() -> void:
+	if _erase_armed_ticks > 0:
+		_erase_armed_ticks -= 1
+		if Input.is_action_just_pressed("buy"):
+			_erase_save_and_restart()
+			return
+		if Input.is_action_just_pressed("pause"):
+			_erase_armed_ticks = 0
+		return
+
+	if Input.is_action_just_pressed("move_left"):
+		_display.cycle(-1)
+		_display.apply(get_window())
+		_display.save_to_disk()
+	elif Input.is_action_just_pressed("move_right"):
+		_display.cycle(1)
+		_display.apply(get_window())
+		_display.save_to_disk()
+	elif Input.is_action_just_pressed("buy"):
+		_erase_armed_ticks = ERASE_CONFIRM_TICKS
+	elif Input.is_action_just_pressed("pause"):
+		_mode = Mode.PLAYING
+
+
+## Wipe the meta save to a fresh (all-zero) state and drop straight into a
+## brand-new run — the "start a new file" the Pause screen exposes.
+func _erase_save_and_restart() -> void:
+	_meta = RunMetaScript.new()
+	_meta.save_to_disk()
+	_overlay.meta = _meta
+	_last_run = null
+	_mode = Mode.PLAYING
+	_start_run()
 
 
 ## True if the player tapped anywhere this frame (touch devices only).

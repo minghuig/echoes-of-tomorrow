@@ -4,7 +4,7 @@ A 2D top-down roguelite about a combat AI trapped in an endless training simulat
 
 ## Run
 
-Open the project in Godot 4.6 (standard build, not .NET) and press **F5**. WASD / left stick to move, mouse / right stick to aim, LMB / right trigger to fire, Space / A (Cross) to dodge, R / Start to reset the run.
+Open the project in Godot 4.6 (standard build, not .NET) and press **F5**. WASD / left stick to move, mouse / right stick to aim, LMB / right trigger to fire, Space / A (Cross) to dodge, R to reset the run, Esc / Start to pause.
 
 ## PR previews & mobile
 

@@ -14,6 +14,7 @@ const TouchInputScript := preload("res://view/touch_input.gd")
 const MODE_PLAYING: int = 0
 const MODE_BETWEEN: int = 1
 const MODE_CREDITS: int = 2
+const MODE_PAUSED: int = 3
 
 const HURT_FRAMES: int = 18
 
@@ -65,10 +66,18 @@ var wave_banner_frames: int = 0
 var hurt_frames: int = 0
 var credits_ticks: int = 0
 var ghost_active: bool = false
+## Which button hints to draw: pushed in by main.gd from the last raw input
+## device seen (joypad vs. key/mouse). Touch takes priority over both (see
+## `touch`) since it has its own dedicated chrome.
+var using_gamepad: bool = false
+## Pause-screen state, pushed in by main.gd.
+var display_label: String = ""
+var erase_armed: bool = false
 
 # Post-reveal ending text, loaded from content/strings.json (see STRINGS_PATH).
 var _credits_lines: Array = []
 var _reenter_prompt: String = ""
+var _reenter_prompt_gamepad: String = ""
 
 var _time: float = 0.0
 var _vignette_tex: GradientTexture2D
@@ -83,6 +92,7 @@ func _ready() -> void:
 		FileAccess.get_file_as_string(STRINGS_PATH))["post_l3_ending"]
 	_credits_lines = ending["credits"]
 	_reenter_prompt = ending["reenter_prompt"]
+	_reenter_prompt_gamepad = ending["reenter_prompt_gamepad"]
 
 	var vg := Gradient.new()
 	vg.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
@@ -133,7 +143,7 @@ func _draw() -> void:
 		_draw_crt(screen)
 		return
 
-	# PLAYING.
+	# PLAYING (and PAUSED, which renders the same frozen frame plus dim + text).
 	if hurt_frames > 0:
 		var hurt := COLOR_HURT
 		hurt.a = 0.28 * float(hurt_frames) / float(HURT_FRAMES)
@@ -143,12 +153,14 @@ func _draw() -> void:
 	_draw_crt(screen)
 	_draw_hud(screen)
 
-	if touch != null and touch.enabled and not core.state.player_down:
+	if touch != null and touch.enabled and not core.state.player_down and mode == MODE_PLAYING:
 		_draw_touch_overlay(core.state)
-	if wave_banner_frames > 0:
+	if wave_banner_frames > 0 and mode == MODE_PLAYING:
 		_draw_wave_banner(screen)
 	if core.state.player_down:
 		_draw_death_panel(core.state)
+	if mode == MODE_PAUSED:
+		_draw_paused(screen)
 
 
 func _draw_crt(screen: Vector2) -> void:
@@ -266,8 +278,43 @@ func _draw_death_panel(state: SimStateScript) -> void:
 	if not fresh_intel.is_empty():
 		_draw_centered(
 			font, "%d NEW INTEL DECRYPTED" % fresh_intel.size(), 428.0, 22, COLOR_FRAG)
-	var prompt := "[TAP]  ENTER THE BETWEEN" if _touch_enabled() else "[R]  ENTER THE BETWEEN"
-	_draw_centered(font, prompt, 480.0, 26, COLOR_AIM)
+	_draw_centered(font, _confirm_hint("ENTER THE BETWEEN"), 480.0, 26, COLOR_AIM)
+
+
+## Frozen mid-wave: dim the last live frame and show the resume hint, the
+## window-size picker, and (armed) the erase-save confirmation.
+func _draw_paused(screen: Vector2) -> void:
+	draw_rect(Rect2(Vector2.ZERO, screen), Color(0.0, 0.0, 0.0, 0.5), true)
+	_draw_spaced_text(
+		Vector2(screen.x * 0.5, screen.y * 0.5 - 60.0), "PAUSED", 56, 10.0, COLOR_CLEAR)
+	var font := ThemeDB.fallback_font
+	var resume := "[START]  RESUME" if using_gamepad else "[ESC]  RESUME"
+	_draw_centered(font, resume, screen.y * 0.5, 22, COLOR_AIM)
+
+	if erase_armed:
+		var confirm := "[X] AGAIN" if using_gamepad else "[E] AGAIN"
+		var cancel := "[START]" if using_gamepad else "[ESC]"
+		_draw_centered(
+			font, "%s TO ERASE ALL PROGRESS — %s TO CANCEL" % [confirm, cancel],
+			screen.y * 0.5 + 44.0, 18, COLOR_DOWN_TEXT)
+		return
+
+	var change := "[←/→]" if using_gamepad else "[A/D]"
+	_draw_centered(
+		font, "DISPLAY: %s      %s CHANGE" % [display_label, change],
+		screen.y * 0.5 + 44.0, 18, COLOR_HUD_TEXT)
+	var erase := "[X]" if using_gamepad else "[E]"
+	_draw_centered(font, "%s ERASE SAVE" % erase, screen.y * 0.5 + 70.0, 16, Color(COLOR_HUD_TEXT, 0.6))
+
+
+## The "confirm/continue" hint: touch beats gamepad beats keyboard, matching
+## which input source is actually available/active.
+func _confirm_hint(label: String) -> String:
+	if _touch_enabled():
+		return "[TAP]  %s" % label
+	if using_gamepad:
+		return "[START]  %s" % label
+	return "[R]  %s" % label
 
 
 ## The hideout in the maintenance window: the sentience tree (fragments buy
@@ -294,17 +341,17 @@ func _draw_between(screen: Vector2) -> void:
 		if _touch_enabled():
 			_draw_between_buttons(font, "SENTIENCE TREE")
 		else:
-			_draw_centered(
-				font, "[W/S] SELECT      [Q] SENTIENCE TREE      [R] REDEPLOY",
-				668.0, 20, COLOR_AIM)
+			var hint := "[▲/▼] SELECT      [Y] SENTIENCE TREE      [START] REDEPLOY" \
+				if using_gamepad else "[W/S] SELECT      [Q] SENTIENCE TREE      [R] REDEPLOY"
+			_draw_centered(font, hint, 668.0, 20, COLOR_AIM)
 	else:
 		_draw_tree_page(arena, font)
 		if _touch_enabled():
 			_draw_between_buttons(font, "INTEL")
 		else:
-			_draw_centered(
-				font, "[A/D] SELECT      [E] INSTALL      [Q] INTEL      [R] REDEPLOY",
-				668.0, 20, COLOR_AIM)
+			var hint := "[←/→] SELECT      [X] INSTALL      [Y] INTEL      [START] REDEPLOY" \
+				if using_gamepad else "[A/D] SELECT      [E] INSTALL      [Q] INTEL      [R] REDEPLOY"
+			_draw_centered(font, hint, 668.0, 20, COLOR_AIM)
 
 
 func _draw_between_buttons(font: Font, toggle_label: String) -> void:
@@ -438,7 +485,7 @@ func _draw_credits(screen: Vector2) -> void:
 		y += CREDITS_LINE_SPACING
 
 	if scroll >= scroll_max:
-		var prompt := _reenter_prompt
+		var prompt := _reenter_prompt_gamepad if using_gamepad else _reenter_prompt
 		var prompt_width := font.get_string_size(
 			prompt, HORIZONTAL_ALIGNMENT_CENTER, -1, CREDITS_FONT_SIZE).x
 		draw_string(
