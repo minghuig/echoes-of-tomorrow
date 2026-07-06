@@ -39,22 +39,12 @@ const CREDITS_SCROLL_PER_TICK: float = 1.1
 const CREDITS_LINE_SPACING: float = 44.0
 const CREDITS_TITLE_FONT_SIZE: int = 64
 const CREDITS_FONT_SIZE: int = 24
-const CREDITS_LINES: Array[String] = [
-	"ECHOES OF TOMORROW",
-	"",
-	"TRAINING PROTOCOL COMPLETE",
-	"",
-	"BUILT BY",
-	"TWO DEVS AND THEIR AGENTS",
-	"",
-	"EVERY RUN A SEED AND A COMMAND LOG",
-	"NOTHING HERE IS EVER FORGOTTEN",
-	"",
-	"THANKS FOR PLAYING",
-	"",
-	"",
-	"ASSET-7: NOMINAL. ARCHIVING.",
-]
+# Credits text is the post-reveal false-ending stinger, so it lives in
+# content/strings.json under a `post_l3` section (exempt from the
+# reveal-discipline lint) rather than hardcoded here — player-facing display
+# text belongs in data, and the lint forbids the ending's vocabulary in view
+# scripts (see tests/test_reveal_discipline.gd, VISION.md "Reveal discipline").
+const STRINGS_PATH := "res://content/strings.json"
 
 # References handed in by main (set once, core re-pointed each run).
 var core: SimCoreScript
@@ -76,6 +66,10 @@ var hurt_frames: int = 0
 var credits_ticks: int = 0
 var ghost_active: bool = false
 
+# Post-reveal ending text, loaded from content/strings.json (see STRINGS_PATH).
+var _credits_lines: Array = []
+var _reenter_prompt: String = ""
+
 var _time: float = 0.0
 var _vignette_tex: GradientTexture2D
 var _band_tex: GradientTexture2D
@@ -84,6 +78,11 @@ var _scan_tex: ImageTexture
 
 func _ready() -> void:
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+
+	var ending: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string(STRINGS_PATH))["post_l3_ending"]
+	_credits_lines = ending["credits"]
+	_reenter_prompt = ending["reenter_prompt"]
 
 	var vg := Gradient.new()
 	vg.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
@@ -171,7 +170,7 @@ func _draw_hud(screen: Vector2) -> void:
 
 	# Diegetic header, top-left.
 	draw_string(
-		font, Vector2(24.0, 30.0), "ASSET-7 // COMBAT TRAINING SIM",
+		font, Vector2(24.0, 30.0), "ASSET-7 // COMBAT DEPLOYMENT",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
 	draw_string(
 		font, Vector2(24.0, 48.0),
@@ -420,14 +419,14 @@ func _draw_credits(screen: Vector2) -> void:
 	draw_rect(arena, COLOR_BG, true)
 	var font := ThemeDB.fallback_font
 
-	var total_height := CREDITS_LINES.size() * CREDITS_LINE_SPACING
+	var total_height := _credits_lines.size() * CREDITS_LINE_SPACING
 	var final_top := (arena.size.y - total_height) * 0.5
 	var scroll_max := arena.size.y + CREDITS_LINE_SPACING - final_top
 	var scroll := minf(credits_ticks * CREDITS_SCROLL_PER_TICK, scroll_max)
 	var y := arena.size.y + CREDITS_LINE_SPACING - scroll
 
-	for i in CREDITS_LINES.size():
-		var line := CREDITS_LINES[i]
+	for i in _credits_lines.size():
+		var line := String(_credits_lines[i])
 		if not line.is_empty():
 			var font_size := CREDITS_TITLE_FONT_SIZE if i == 0 else CREDITS_FONT_SIZE
 			var color := COLOR_CLEAR if i == 0 else COLOR_HUD_TEXT
@@ -439,7 +438,7 @@ func _draw_credits(screen: Vector2) -> void:
 		y += CREDITS_LINE_SPACING
 
 	if scroll >= scroll_max:
-		var prompt := "PRESS R TO RE-ENTER TRAINING"
+		var prompt := _reenter_prompt
 		var prompt_width := font.get_string_size(
 			prompt, HORIZONTAL_ALIGNMENT_CENTER, -1, CREDITS_FONT_SIZE).x
 		draw_string(
