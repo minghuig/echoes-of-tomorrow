@@ -20,13 +20,14 @@ const WAVES_PATH := "res://content/waves.json"
 var state: State
 var rng: RandomNumberGenerator
 
-# Tuning values, loaded from content/tuning.json in setup().
+# Tuning values, loaded from content/tuning.json in setup(). Public fields are
+# read by the view (radii for shapes, ticks/hp for cosmetic indicators).
 var player_radius: float
 var _player_speed: float
 var player_max_hp: int
 var _dodge_impulse: float
 var _dodge_decay: float
-var _dodge_cooldown_ticks: int
+var dodge_cooldown_ticks: int
 var _dodge_iframe_ticks: int
 var projectile_radius: float
 var _proj_speed: float
@@ -34,7 +35,7 @@ var _proj_ttl_ticks: int
 var _fire_cooldown_ticks: int
 var _proj_damage: int
 var _proj_spawn_offset: float
-var _block_hp: int
+var block_max_hp: int
 
 # Enemy roster (type name -> stats Dictionary) and the assault schedule,
 # loaded from content in setup().
@@ -65,7 +66,7 @@ func setup(seed_value: int, loadout: Dictionary = {}) -> void:
 	player_max_hp = int(player["max_hp"])
 	_dodge_impulse = player["dodge_impulse"]
 	_dodge_decay = player["dodge_decay"]
-	_dodge_cooldown_ticks = int(player["dodge_cooldown_ticks"])
+	dodge_cooldown_ticks = int(player["dodge_cooldown_ticks"])
 	_dodge_iframe_ticks = int(player["dodge_iframe_ticks"])
 	projectile_radius = projectile["radius"]
 	_proj_speed = projectile["speed"]
@@ -73,7 +74,7 @@ func setup(seed_value: int, loadout: Dictionary = {}) -> void:
 	_fire_cooldown_ticks = int(projectile["fire_cooldown_ticks"])
 	_proj_damage = int(projectile["damage"])
 	_proj_spawn_offset = projectile["spawn_offset"]
-	_block_hp = int(block["hp"])
+	block_max_hp = int(block["hp"])
 
 	enemy_types = _load_json(ENEMIES_PATH)
 	var waves_cfg: Dictionary = _load_json(WAVES_PATH)
@@ -89,8 +90,8 @@ func setup(seed_value: int, loadout: Dictionary = {}) -> void:
 	player_max_hp += int(loadout.get("max_hp_add", 0))
 	_fire_cooldown_ticks = maxi(
 		1, roundi(float(_fire_cooldown_ticks) * float(loadout.get("fire_cooldown_scale", 1.0))))
-	_dodge_cooldown_ticks = maxi(
-		1, roundi(float(_dodge_cooldown_ticks) * float(loadout.get("dodge_cooldown_scale", 1.0))))
+	dodge_cooldown_ticks = maxi(
+		1, roundi(float(dodge_cooldown_ticks) * float(loadout.get("dodge_cooldown_scale", 1.0))))
 	_dodge_iframe_ticks += int(loadout.get("dodge_iframe_add", 0))
 	_kill_fragment_add = int(loadout.get("kill_fragment_add", 0))
 
@@ -105,7 +106,7 @@ func setup(seed_value: int, loadout: Dictionary = {}) -> void:
 		var b := State.Block.new()
 		b.pos = Vector2(entry["x"], entry["y"])
 		b.size = Vector2(entry["w"], entry["h"])
-		b.hp = _block_hp
+		b.hp = block_max_hp
 		state.blocks.append(b)
 
 
@@ -138,7 +139,7 @@ func _step_player(cmd: SimCommand) -> void:
 	if cmd.dodge and state.dodge_cooldown == 0:
 		var dir := move if move != Vector2.ZERO else state.player_aim
 		state.dodge_vel = dir.normalized() * _dodge_impulse
-		state.dodge_cooldown = _dodge_cooldown_ticks
+		state.dodge_cooldown = dodge_cooldown_ticks
 		state.iframe_ticks = _dodge_iframe_ticks
 
 	state.player_vel = move * _player_speed + state.dodge_vel
