@@ -11,7 +11,9 @@ const SimCoreScript := preload("res://sim/sim_core.gd")
 const SimCommand := preload("res://sim/command.gd")
 
 const SEED: int = 1337
-const TICK_COUNT: int = 900
+## Long enough to cover the authored assault events (first barrage lands
+## around tick 1360; flanks and craters follow) — not just the opening waves.
+const TICK_COUNT: int = 3000
 const HASH_INTERVAL: int = 60
 
 

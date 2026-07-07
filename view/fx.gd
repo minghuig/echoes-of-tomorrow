@@ -255,6 +255,22 @@ func enemy_destroyed(center: Vector2, radius: float, color: Color) -> void:
 	ring(center, color, radius * 0.4, radius + 40.0, 0.26, 3.0)
 
 
+## An artillery shell landing: white concussion ring, orange fire ring, dirt
+## sparks thrown outward, lingering smoke motes.
+func explosion(pos: Vector2, radius: float) -> void:
+	ring(pos, COLOR_WHITE, radius * 0.25, radius * 1.5, 0.32, 7.0)
+	ring(pos, COLOR_SPARK, radius * 0.2, radius * 1.1, 0.26, 4.0)
+	_burst(pos, Vector2.RIGHT, 18, 160.0, 620.0, PI, COLOR_SPARK, COLOR_SPARK_HOT)
+	for i in 6:
+		var m := Mote.new()
+		_set_life(m, _rng.randf_range(0.3, 0.6))
+		m.pos = pos + Vector2.from_angle(_rng.randf() * TAU) * _rng.randf() * radius * 0.5
+		m.vel = Vector2(_rng.randf_range(-40.0, 40.0), _rng.randf_range(-60.0, -20.0))
+		m.radius = _rng.randf_range(3.0, 7.0)
+		m.color = Color(COLOR_VIOLET, 0.25)
+		_effects.append(m)
+
+
 func dodge_burst(pos: Vector2, dir: Vector2) -> void:
 	ring(pos, COLOR_CYAN, 4.0, 46.0, 0.25, 4.0)
 	_burst(pos, -dir, 8, 220.0, 520.0, 0.5, COLOR_CYAN, COLOR_WHITE)

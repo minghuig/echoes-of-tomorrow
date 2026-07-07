@@ -11,5 +11,32 @@
 		{ "drone": 9, "infantry": 5, "heavy": 1 },
 		{ "drone": 10, "infantry": 6, "heavy": 2 }
 	],
-	"escalation": { "drone": 2, "infantry": 1, "heavy": 1 }
+	"escalation": { "drone": 2, "infantry": 1, "heavy": 1 },
+	"artillery": {
+		"telegraph_ticks": 110,
+		"stagger_ticks": 14,
+		"radius": 66.0,
+		"damage": 24,
+		"block_damage": 2,
+		"crater_radius": 50.0,
+		"crater_slow": 0.6,
+		"max_craters": 48,
+		"zone": { "x": 140.0, "y": 200.0, "w": 1000.0, "h": 280.0 }
+	},
+	"events": [
+		{ "tick": 1250, "kind": "barrage", "count": 4 },
+		{ "tick": 1750, "kind": "flank", "edge": "left", "comp": { "drone": 3 } },
+		{ "tick": 2300, "kind": "barrage", "count": 5 },
+		{ "tick": 2380, "kind": "flank", "edge": "right", "comp": { "infantry": 2 } },
+		{ "tick": 2950, "kind": "barrage", "count": 5,
+			"zone": { "x": 300.0, "y": 330.0, "w": 680.0, "h": 240.0 } },
+		{ "tick": 3300, "kind": "flank", "edge": "left",
+			"comp": { "drone": 4, "infantry": 1 } }
+	],
+	"recurring_barrage": {
+		"start_tick": 3900,
+		"interval_ticks": 660,
+		"count": 5,
+		"count_growth_every": 3
+	}
 }

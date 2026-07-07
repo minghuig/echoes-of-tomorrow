@@ -31,6 +31,9 @@ const COLOR_GHOST_PROJ := Color(0.247, 0.816, 0.831, 0.22)
 ## Windup warnings: danger red that heats toward white as the attack commits.
 const COLOR_TELEGRAPH := Color("ff4d42")
 const COLOR_TELEGRAPH_HOT := Color("ffe9dc")
+## Rough ground left by artillery.
+const COLOR_CRATER_FILL := Color("05060b")
+const COLOR_CRATER_RIM := Color("7a563e")
 
 var core: SimCoreScript
 var ghost_core: SimCoreScript = null
@@ -50,8 +53,14 @@ func _draw() -> void:
 		return
 	var state: SimStateScript = core.state
 
+	for c: SimStateScript.Crater in state.craters:
+		_draw_crater(c)
+
 	for b: SimStateScript.Block in state.blocks:
 		_draw_block(b)
+
+	for imp: SimStateScript.Impact in state.pending_impacts:
+		_draw_impact_warning(imp, state.tick)
 
 	if ghost_core != null:
 		_draw_ghost()
@@ -64,6 +73,35 @@ func _draw() -> void:
 		_draw_projectile(p)
 
 	_draw_player(state)
+
+
+## Scorched rough ground: dark bowl, ember rim, deterministic debris flecks.
+func _draw_crater(c: SimStateScript.Crater) -> void:
+	draw_circle(c.pos, c.radius, Color(COLOR_CRATER_FILL, 0.85))
+	draw_circle(c.pos, c.radius * 0.55, Color(0.0, 0.0, 0.0, 0.5))
+	draw_arc(c.pos, c.radius, 0.0, TAU, 40, Color(COLOR_CRATER_RIM, 0.4), 2.0)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(c.pos)
+	for i in 6:
+		var p := c.pos + Vector2.from_angle(rng.randf() * TAU) * rng.randf() * c.radius * 0.8
+		draw_circle(p, rng.randf_range(1.5, 3.0), Color(COLOR_CRATER_RIM, 0.25))
+
+
+## Incoming artillery: target ring + collapsing outer ring + hot center dot,
+## flashing faster as the shell falls. Geometry is exact — the sim resolves
+## the impact at precisely this circle.
+func _draw_impact_warning(imp: SimStateScript.Impact, tick: int) -> void:
+	var rem := imp.land_tick - tick
+	var t := clampf(1.0 - float(rem) / 110.0, 0.0, 1.0)
+	var flash := 0.65 + 0.35 * sin(_time * (8.0 + 22.0 * t))
+	var color := COLOR_TELEGRAPH.lerp(COLOR_TELEGRAPH_HOT, t * t)
+	draw_circle(imp.pos, imp.radius, Color(color, (0.04 + 0.10 * t) * flash))
+	draw_arc(
+		imp.pos, imp.radius, 0.0, TAU, 40,
+		Color(color, (0.16 + 0.45 * t) * flash), 1.5 + 2.5 * t)
+	var outer := imp.radius * (1.0 + float(rem) * 0.012)
+	draw_arc(imp.pos, outer, 0.0, TAU, 40, Color(color, 0.22 * flash), 1.5)
+	draw_circle(imp.pos, 3.0 + 2.0 * t, Color(color, 0.7 * flash))
 
 
 func _draw_block(b: SimStateScript.Block) -> void:

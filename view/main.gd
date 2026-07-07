@@ -320,10 +320,14 @@ func _physics_process(_delta: float) -> void:
 	for p: SimStateScript.Projectile in state.projectiles:
 		_proj_prev[p.get_instance_id()] = p.pos
 
+	var pre_impacts: Array[SimStateScript.Impact] = state.pending_impacts.duplicate()
+
 	var cmd := _build_command()
 	_command_log.append(cmd)
 	_core.step(cmd)
 	_step_ghost()
+
+	_emit_impact_events(state, pre_impacts)
 
 	_emit_feel_events(
 		cmd.fire and pre_fire_cooldown == 0, pre_blocks, pre_enemies, pre_hp, pre_wave)
@@ -765,6 +769,27 @@ func _emit_feel_events(
 		_banner_wave = _core.state.wave_index
 		_wave_banner_frames = WAVE_BANNER_FRAMES
 		_sfx_wave.play()
+
+
+## Shells that left pending_impacts this tick landed: explosion fx + shake.
+func _emit_impact_events(
+	state: SimStateScript, pre_impacts: Array[SimStateScript.Impact]
+) -> void:
+	if pre_impacts.is_empty():
+		return
+	var still := {}
+	for imp: SimStateScript.Impact in state.pending_impacts:
+		still[imp] = true
+	var landed := 0
+	for imp: SimStateScript.Impact in pre_impacts:
+		if still.has(imp):
+			continue
+		landed += 1
+		_fx.explosion(imp.pos, imp.radius)
+	if landed > 0:
+		_shake = maxf(_shake, SHAKE_DESTROY)
+		_hitstop_frames = maxi(_hitstop_frames, HITSTOP_HIT_FRAMES)
+		_sfx_break.play()
 
 
 ## Diff the projectile set to spawn muzzle flashes (on new bolts), recoil, and
