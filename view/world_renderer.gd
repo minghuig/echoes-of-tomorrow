@@ -75,6 +75,8 @@ func _draw() -> void:
 
 	for c: SimStateScript.Cache in state.caches:
 		_draw_cache(c)
+	for d: SimStateScript.Decoy in state.decoys:
+		_draw_decoy(d)
 	for m: SimStateScript.Mine in state.mines:
 		_draw_mine(m)
 	for p: SimStateScript.Pickup in state.pickups:
@@ -145,6 +147,24 @@ func _draw_rubble(r: SimStateScript.Rubble) -> void:
 		draw_set_transform(p, rng.randf_range(-0.6, 0.6), Vector2.ONE)
 		draw_rect(Rect2(-half, half * 2.0), Color(COLOR_BLOCK_EDGE, 0.22))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## The afterimage: a translucent copy of the player's hull that enemies
+## treat as real. Flickers harder as it fades or breaks.
+func _draw_decoy(d: SimStateScript.Decoy) -> void:
+	var wobble := 0.75 + 0.25 * sin(_time * 14.0)
+	var alpha := 0.45 * wobble
+	if d.ttl < 120 or d.hp < 10:
+		alpha *= 0.5 + 0.5 * sin(_time * 24.0)
+	var r := core.player_radius
+	DrawUtil.capsule(self, d.pos, r + 3.0, r * 0.45, 0.0, Color(COLOR_GHOST, alpha * 0.4))
+	DrawUtil.capsule(self, d.pos, r, r * 0.45, 0.0, Color(COLOR_GHOST, alpha))
+	draw_circle(d.pos + Vector2(0.0, -r * 0.2), r * 0.2, Color(COLOR_EYE, alpha))
+	# Integrity arc.
+	var frac := clampf(float(d.hp) / 30.0, 0.0, 1.0)
+	draw_arc(
+		d.pos, r + 7.0, -PI / 2.0, -PI / 2.0 + TAU * frac, 28,
+		Color(COLOR_GHOST, 0.6), 2.0)
 
 
 ## A lootable crate: braced box with a pulsing lock light. Schematic caches

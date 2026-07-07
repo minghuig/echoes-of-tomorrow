@@ -70,6 +70,10 @@ func _doctor_save() -> void:
 	# render in screenshots.
 	save["best_wave"] = 6
 	save["killed_by"] = {"drone": 1, "infantry": 2, "heavy": 1, "artillery": 1}
+	# Cognition tier 1 unlocks the afterimage decoy.
+	var upgrades: Dictionary = save.get("upgrades", {})
+	upgrades["cognition"] = 1
+	save["upgrades"] = upgrades
 	var out := FileAccess.open(path, FileAccess.WRITE)
 	if out != null:
 		out.store_string(JSON.stringify(save))
@@ -163,6 +167,12 @@ func _drive_input() -> void:
 	else:
 		Input.action_release("mine")
 
+	# Plant an afterimage occasionally (doctored Cognition unlock).
+	if _frames % 500 == 120:
+		Input.action_press("decoy")
+	else:
+		Input.action_release("decoy")
+
 	# Aim at the nearest enemy via mouse warp. World -> screen through the
 	# canvas transform (the camera scrolls now), clamped into the window.
 	var best: Vector2 = state.player_pos + Vector2(0.0, -200.0)
@@ -180,7 +190,7 @@ func _drive_input() -> void:
 
 func _release_all() -> void:
 	for a: String in [
-		"fire", "dodge", "reset", "focus", "mine",
+		"fire", "dodge", "reset", "focus", "mine", "decoy",
 		"move_left", "move_right", "move_up", "move_down",
 	]:
 		Input.action_release(a)
