@@ -66,6 +66,9 @@ var wave_banner_frames: int = 0
 var hurt_frames: int = 0
 var credits_ticks: int = 0
 var ghost_active: bool = false
+## Held-breath meter (0..1) and whether the slow is currently held.
+var focus_fraction: float = 1.0
+var focus_active: bool = false
 ## Which button hints to draw: pushed in by main.gd from the last raw input
 ## device seen (joypad vs. key/mouse). Touch takes priority over both (see
 ## `touch`) since it has its own dedicated chrome.
@@ -158,6 +161,10 @@ func _draw() -> void:
 
 	# PLAYING (and PAUSED-from-PLAYING, which renders the same frozen frame
 	# plus a dim + pause chrome on top).
+	# The held breath tints the whole frame cold while active.
+	if focus_active and mode == MODE_PLAYING:
+		draw_rect(Rect2(Vector2.ZERO, screen), Color(0.25, 0.82, 0.85, 0.045), true)
+
 	if hurt_frames > 0:
 		var hurt := COLOR_HURT
 		hurt.a = 0.28 * float(hurt_frames) / float(HURT_FRAMES)
@@ -214,6 +221,21 @@ func _draw_hud(screen: Vector2) -> void:
 	draw_string(
 		font, Vector2(bar.end.x + 10.0, 69.0), "INTEGRITY %d%%" % roundi(ratio * 100.0),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, dim)
+
+	# Held-breath meter under the integrity bar. It brightens while held and
+	# reads dim when spent.
+	var breath := Rect2(24.0, 76.0, 150.0, 6.0)
+	draw_rect(breath, COLOR_HP_BACK)
+	if focus_fraction > 0.0:
+		var breath_col := Color(COLOR_AIM, 0.9 if focus_active else 0.5)
+		draw_rect(
+			Rect2(breath.position, Vector2(breath.size.x * focus_fraction, breath.size.y)),
+			breath_col)
+	draw_rect(breath, Color(COLOR_HUD, 0.35), false, 1.0)
+	draw_string(
+		font, Vector2(breath.end.x + 10.0, 83.0), "HELD BREATH",
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
+		Color(COLOR_AIM, 0.8) if focus_active else dim)
 
 	# Run stats, top-right.
 	var right := screen.x - 24.0

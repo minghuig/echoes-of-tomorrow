@@ -125,6 +125,12 @@ func _drive_input() -> void:
 	else:
 		Input.action_release("dodge")
 
+	# Periodically hold the breath so screenshots exercise the slow + meter.
+	if (_frames % 900) > 620:
+		Input.action_press("focus")
+	else:
+		Input.action_release("focus")
+
 	# Aim at the nearest enemy via mouse warp (window == viewport, so world
 	# coordinates are window coordinates).
 	var best := Vector2(640.0, 120.0)
@@ -139,7 +145,8 @@ func _drive_input() -> void:
 
 func _release_all() -> void:
 	for a: String in [
-		"fire", "dodge", "reset", "move_left", "move_right", "move_up", "move_down",
+		"fire", "dodge", "reset", "focus",
+		"move_left", "move_right", "move_up", "move_down",
 	]:
 		Input.action_release(a)
 
