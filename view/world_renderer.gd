@@ -56,6 +56,9 @@ func _draw() -> void:
 	for c: SimStateScript.Crater in state.craters:
 		_draw_crater(c)
 
+	for r: SimStateScript.Rubble in state.rubble:
+		_draw_rubble(r)
+
 	for b: SimStateScript.Block in state.blocks:
 		_draw_block(b)
 
@@ -104,9 +107,26 @@ func _draw_impact_warning(imp: SimStateScript.Impact, tick: int) -> void:
 	draw_circle(imp.pos, 3.0 + 2.0 * t, Color(color, 0.7 * flash))
 
 
+## A dead block's remains: dim scattered slabs in a faint patch. Reads as
+## debris, promises the slow, offers no cover.
+func _draw_rubble(r: SimStateScript.Rubble) -> void:
+	var rect := Rect2(r.pos, r.size)
+	draw_rect(rect.grow(4.0), Color(COLOR_BLOCK_FILL, 0.30))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(r.pos)
+	for i in 9:
+		var p := Vector2(
+			rect.position.x + rng.randf() * rect.size.x,
+			rect.position.y + rng.randf() * rect.size.y)
+		var half := Vector2(rng.randf_range(3.0, 8.0), rng.randf_range(2.0, 5.0))
+		draw_set_transform(p, rng.randf_range(-0.6, 0.6), Vector2.ONE)
+		draw_rect(Rect2(-half, half * 2.0), Color(COLOR_BLOCK_EDGE, 0.22))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
 func _draw_block(b: SimStateScript.Block) -> void:
 	var rect := Rect2(b.pos, b.size)
-	var max_hp := core.block_max_hp
+	var max_hp := maxi(b.max_hp, 1)
 	var health := float(b.hp) / float(max_hp)
 	var damage := max_hp - b.hp
 
@@ -133,14 +153,25 @@ func _draw_block(b: SimStateScript.Block) -> void:
 	draw_rect(rect, Color(COLOR_BLOCK_EDGE, edge_alpha), false, 2.0)
 	_draw_block_corners(rect.grow(-1.0), Color(COLOR_BLOCK_BRIGHT, edge_alpha))
 
-	for i in b.hp:
+	# HP readout: pips for light cover, a thin fill bar for tough segments
+	# (a seawall at 10 pips would read as noise).
+	if max_hp <= 6:
+		for i in b.hp:
+			draw_rect(
+				Rect2(
+					rect.position + Vector2(6.0 + i * 8.0, rect.size.y - 10.0),
+					Vector2(4.0, 4.0),
+				),
+				Color(COLOR_BLOCK_BRIGHT, 0.85),
+			)
+	else:
+		var bar := Rect2(
+			rect.position + Vector2(6.0, rect.size.y - 9.0),
+			Vector2(rect.size.x - 12.0, 3.0))
+		draw_rect(bar, Color(COLOR_BLOCK_BRIGHT, 0.2))
 		draw_rect(
-			Rect2(
-				rect.position + Vector2(6.0 + i * 8.0, rect.size.y - 10.0),
-				Vector2(4.0, 4.0),
-			),
-			Color(COLOR_BLOCK_BRIGHT, 0.85),
-		)
+			Rect2(bar.position, Vector2(bar.size.x * health, bar.size.y)),
+			Color(COLOR_BLOCK_BRIGHT, 0.75))
 
 
 func _draw_cracks(rect: Rect2, damage: int, seed_value: int) -> void:

@@ -62,6 +62,11 @@ var _recurring_barrage: Dictionary
 var _crater_slow: float
 var _max_craters: int
 
+# Zone-band terrain: the surf slows ground movers above surf_line; rubble
+# patches (dead blocks) slow them anywhere.
+var _surf_slow: float
+var _rubble_slow: float
+
 # From the loadout: extra fragments stripped per kill (Exfiltration branch).
 var _kill_fragment_add: int = 0
 
@@ -119,6 +124,14 @@ func setup(seed_value: int, loadout: Dictionary = {}) -> void:
 	state.arena_size = Vector2(arena["width"], arena["height"])
 	state.player_hp = player_max_hp
 
+	# Per-seed tide: the first RNG draw of the run, before any scheduling,
+	# so every consumer downstream sees the same stream offsets.
+	var surf: Dictionary = tuning.get("surf", {})
+	_surf_slow = float(surf.get("slow", 1.0))
+	state.surf_line = rng.randf_range(
+		float(surf.get("depth_min", 0.0)), float(surf.get("depth_max", 0.0)))
+	_rubble_slow = float(tuning.get("rubble", {}).get("slow", 1.0))
+
 	var layout: Dictionary = _load_json(LAYOUT_PATH)
 	var spawn: Dictionary = layout["player_spawn"]
 	state.player_pos = Vector2(spawn["x"], spawn["y"])
@@ -126,7 +139,8 @@ func setup(seed_value: int, loadout: Dictionary = {}) -> void:
 		var b := State.Block.new()
 		b.pos = Vector2(entry["x"], entry["y"])
 		b.size = Vector2(entry["w"], entry["h"])
-		b.hp = block_max_hp
+		b.max_hp = int(entry.get("hp", block_max_hp))
+		b.hp = b.max_hp
 		state.blocks.append(b)
 
 
@@ -165,7 +179,7 @@ func _step_player(cmd: SimCommand) -> void:
 		state.iframe_ticks = _dodge_iframe_ticks
 
 	state.player_vel = move * _player_speed + state.dodge_vel
-	state.player_pos += state.player_vel * DT * _crater_factor(state.player_pos)
+	state.player_pos += state.player_vel * DT * _terrain_factor(state.player_pos)
 	state.dodge_vel *= _dodge_decay
 	if state.dodge_vel.length_squared() < 1.0:
 		state.dodge_vel = Vector2.ZERO
@@ -341,12 +355,21 @@ func _step_impacts() -> void:
 		_settle_blocks()
 
 
-## Movement multiplier for ground movers standing in rough ground.
-func _crater_factor(pos: Vector2) -> float:
+## Movement multiplier for ground movers: surf above the tide line, crater
+## bowls, and rubble patches all slow — the worst one wins.
+func _terrain_factor(pos: Vector2) -> float:
+	var factor := 1.0
+	if pos.y < state.surf_line:
+		factor = minf(factor, _surf_slow)
 	for c: State.Crater in state.craters:
 		if pos.distance_squared_to(c.pos) <= c.radius * c.radius:
-			return _crater_slow
-	return 1.0
+			factor = minf(factor, _crater_slow)
+			break
+	for r: State.Rubble in state.rubble:
+		if Rect2(r.pos, r.size).has_point(pos):
+			factor = minf(factor, _rubble_slow)
+			break
+	return factor
 
 
 func _step_spawns() -> void:
@@ -381,7 +404,7 @@ func _step_enemies() -> void:
 				_step_roam(e, dir, dist)
 		var factor := 1.0
 		if bool(enemy_types[e.type].get("ground", true)):
-			factor = _crater_factor(e.pos)
+			factor = _terrain_factor(e.pos)
 		e.pos += e.vel * DT * factor
 
 		_separate(e, radius)
@@ -566,7 +589,8 @@ func _step_enemy_projectiles() -> void:
 
 
 ## Sweep destroyed blocks and bank their fragments. Called after anything
-## that can damage blocks (projectiles, enemy fire, slams).
+## that can damage blocks (projectiles, enemy fire, slams, artillery). A dead
+## block degrades into rubble — a slow-patch, not empty ground.
 func _settle_blocks() -> void:
 	var standing: Array[State.Block] = []
 	for b: State.Block in state.blocks:
@@ -574,6 +598,10 @@ func _settle_blocks() -> void:
 			standing.append(b)
 		else:
 			state.fragments += 1
+			var r := State.Rubble.new()
+			r.pos = b.pos
+			r.size = b.size
+			state.rubble.append(r)
 	state.blocks = standing
 
 

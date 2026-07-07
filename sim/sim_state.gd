@@ -13,6 +13,14 @@ class Block extends RefCounted:
 	var pos: Vector2 = Vector2.ZERO  # top-left corner
 	var size: Vector2 = Vector2.ZERO
 	var hp: int = 0
+	## Authored per-block (seawall segments are tougher than scatter cover).
+	var max_hp: int = 0
+
+## What a destroyed block leaves behind: a slow-patch of debris. No cover
+## value — degraded terrain, not deleted terrain.
+class Rubble extends RefCounted:
+	var pos: Vector2 = Vector2.ZERO  # top-left corner
+	var size: Vector2 = Vector2.ZERO
 
 class Enemy extends RefCounted:
 	var pos: Vector2 = Vector2.ZERO
@@ -82,8 +90,11 @@ var enemy_projectiles: Array[Projectile] = []
 var pending_spawns: Array[PendingSpawn] = []
 var pending_impacts: Array[Impact] = []
 var craters: Array[Crater] = []
+var rubble: Array[Rubble] = []
 
 var arena_size: Vector2 = Vector2.ZERO
+## Per-seed tide: everything above this y is surf and slows ground movers.
+var surf_line: float = 0.0
 
 
 func serialize() -> PackedByteArray:
@@ -110,6 +121,7 @@ func serialize() -> PackedByteArray:
 		_put_vec2(buf, b.pos)
 		_put_vec2(buf, b.size)
 		buf.put_32(b.hp)
+		buf.put_32(b.max_hp)
 	buf.put_u32(enemies.size())
 	for e: Enemy in enemies:
 		_put_vec2(buf, e.pos)
@@ -141,7 +153,12 @@ func serialize() -> PackedByteArray:
 	for c: Crater in craters:
 		_put_vec2(buf, c.pos)
 		buf.put_float(c.radius)
+	buf.put_u32(rubble.size())
+	for r: Rubble in rubble:
+		_put_vec2(buf, r.pos)
+		_put_vec2(buf, r.size)
 	_put_vec2(buf, arena_size)
+	buf.put_float(surf_line)
 	return buf.data_array
 
 

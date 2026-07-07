@@ -20,8 +20,16 @@
 		"hp": 4
 	},
 	"arena": {
-		"width": 1280.0,
-		"height": 720.0
+		"width": 2560.0,
+		"height": 1080.0
+	},
+	"surf": {
+		"depth_min": 150.0,
+		"depth_max": 320.0,
+		"slow": 0.65
+	},
+	"rubble": {
+		"slow": 0.75
 	},
 	"meta": {
 		"win_fragment_target": 200

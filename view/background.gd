@@ -12,6 +12,9 @@ const COLOR_MOTE_A := Color("3fd0d4")
 const COLOR_MOTE_B := Color("8f7bea")
 const COLOR_SEA := Color("16283c")
 const COLOR_SURF := Color("3fd0d4")
+const COLOR_WET_SAND := Color("1c2a33")
+const COLOR_SAND := Color("463a28")
+const COLOR_TRENCH := Color("070a12")
 
 const GRID_MINOR: float = 40.0
 const MAJOR_EVERY: int = 4
@@ -109,6 +112,17 @@ func _draw() -> void:
 
 func _draw_sea() -> void:
 	draw_texture_rect(_sea_tex, Rect2(0.0, 0.0, arena_size.x, sea_depth), false)
+	# Zone bands south of the water: wet sand at the tide line, a warm dry
+	# sand wash below it, and the trench shadow along the bottom edge.
+	draw_rect(
+		Rect2(0.0, sea_depth, arena_size.x, 46.0), Color(COLOR_WET_SAND, 0.30))
+	draw_rect(
+		Rect2(0.0, sea_depth + 46.0, arena_size.x, 150.0), Color(COLOR_SAND, 0.10))
+	draw_rect(
+		Rect2(0.0, arena_size.y - 130.0, arena_size.x, 130.0), Color(COLOR_TRENCH, 0.45))
+	draw_line(
+		Vector2(0.0, arena_size.y - 130.0), Vector2(arena_size.x, arena_size.y - 130.0),
+		Color(COLOR_GRID, 0.10), 1.5)
 	# Surf line ripples gently so the water reads as alive.
 	var wobble := 1.5 * sin(_time * 1.4)
 	draw_line(

@@ -21,7 +21,7 @@
 		"crater_radius": 50.0,
 		"crater_slow": 0.6,
 		"max_craters": 48,
-		"zone": { "x": 140.0, "y": 200.0, "w": 1000.0, "h": 280.0 }
+		"zone": { "x": 200.0, "y": 400.0, "w": 2160.0, "h": 420.0 }
 	},
 	"events": [
 		{ "tick": 1250, "kind": "barrage", "count": 4 },
@@ -29,7 +29,7 @@
 		{ "tick": 2300, "kind": "barrage", "count": 5 },
 		{ "tick": 2380, "kind": "flank", "edge": "right", "comp": { "infantry": 2 } },
 		{ "tick": 2950, "kind": "barrage", "count": 5,
-			"zone": { "x": 300.0, "y": 330.0, "w": 680.0, "h": 240.0 } },
+			"zone": { "x": 700.0, "y": 560.0, "w": 1160.0, "h": 320.0 } },
 		{ "tick": 3300, "kind": "flank", "edge": "left",
 			"comp": { "drone": 4, "infantry": 1 } }
 	],
