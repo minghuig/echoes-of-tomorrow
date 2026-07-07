@@ -1,41 +1,53 @@
 {
 	"drone": {
+		"behavior": "diver",
 		"radius": 10.0,
 		"speed": 150.0,
 		"hp": 2,
 		"contact_damage": 8,
 		"contact_cooldown_ticks": 30,
 		"fragments": 1,
-		"preferred_range": 0.0,
-		"proj_speed": 0.0,
-		"proj_ttl_ticks": 0,
-		"proj_damage": 0,
-		"fire_cooldown_ticks": 0
+		"fire_cooldown_ticks": 90,
+		"windup_ticks": 33,
+		"recover_ticks": 45,
+		"dive_range": 240.0,
+		"dive_speed": 480.0,
+		"dive_ticks": 24
 	},
 	"infantry": {
+		"behavior": "volley",
 		"radius": 13.0,
 		"speed": 90.0,
 		"hp": 5,
 		"contact_damage": 10,
 		"contact_cooldown_ticks": 45,
 		"fragments": 2,
+		"fire_cooldown_ticks": 110,
+		"windup_ticks": 30,
+		"recover_ticks": 26,
 		"preferred_range": 340.0,
-		"proj_speed": 270.0,
+		"lead_ticks": 16,
+		"volley_shots": 3,
+		"shot_gap_ticks": 9,
+		"proj_speed": 290.0,
 		"proj_ttl_ticks": 240,
-		"proj_damage": 9,
-		"fire_cooldown_ticks": 96
+		"proj_damage": 9
 	},
 	"heavy": {
+		"behavior": "slammer",
 		"radius": 22.0,
 		"speed": 52.0,
 		"hp": 18,
 		"contact_damage": 24,
 		"contact_cooldown_ticks": 60,
 		"fragments": 5,
-		"preferred_range": 0.0,
-		"proj_speed": 0.0,
-		"proj_ttl_ticks": 0,
-		"proj_damage": 0,
-		"fire_cooldown_ticks": 0
+		"fire_cooldown_ticks": 80,
+		"windup_ticks": 48,
+		"recover_ticks": 66,
+		"slam_range": 130.0,
+		"slam_radius": 100.0,
+		"slam_damage": 26,
+		"slam_block_damage": 2,
+		"slam_knockback": 620.0
 	}
 }

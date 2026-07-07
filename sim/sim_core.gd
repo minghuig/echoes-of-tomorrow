@@ -12,6 +12,13 @@ const State := preload("res://sim/sim_state.gd")
 const TICKS_PER_SECOND: int = 60
 const DT: float = 1.0 / 60.0
 
+## Enemy attack phases (SimState.Enemy.phase). Every dangerous action winds up
+## visibly, commits along a locked direction, then leaves a punish window.
+const PHASE_ROAM := 0
+const PHASE_WINDUP := 1
+const PHASE_COMMIT := 2
+const PHASE_RECOVER := 3
+
 const TUNING_PATH := "res://content/tuning.json"
 const LAYOUT_PATH := "res://content/block_layout.json"
 const ENEMIES_PATH := "res://content/enemies.json"
@@ -188,13 +195,7 @@ func _step_projectiles() -> void:
 			survivors.append(p)
 	state.projectiles = survivors
 
-	var standing: Array[State.Block] = []
-	for b: State.Block in state.blocks:
-		if b.hp > 0:
-			standing.append(b)
-		else:
-			state.fragments += 1
-	state.blocks = standing
+	_settle_blocks()
 
 
 ## Queue the next wave onto the spawn list when its start tick arrives.
@@ -244,22 +245,23 @@ func _step_spawns() -> void:
 
 func _step_enemies() -> void:
 	for e: State.Enemy in state.enemies:
-		var speed := _stat_f(e.type, "speed")
-		var preferred := _stat_f(e.type, "preferred_range")
 		var radius := _stat_f(e.type, "radius")
 		var to_player := state.player_pos - e.pos
 		var dist := to_player.length()
 		var dir := to_player / dist if dist > 0.001 else Vector2.DOWN
 
-		# Chasers close to contact; shooters advance to range, back off
-		# when crowded, and otherwise hold and fire.
-		var advance := 1.0
-		if preferred > 0.0:
-			if dist < preferred * 0.6:
-				advance = -1.0
-			elif dist <= preferred:
-				advance = 0.0
-		e.vel = dir * speed * advance
+		match e.phase:
+			PHASE_WINDUP:
+				_step_windup(e)
+			PHASE_COMMIT:
+				_step_commit(e)
+			PHASE_RECOVER:
+				e.vel = Vector2.ZERO
+				e.phase_ticks -= 1
+				if e.phase_ticks <= 0:
+					e.phase = PHASE_ROAM
+			_:
+				_step_roam(e, dir, dist)
 		e.pos += e.vel * DT
 
 		_separate(e, radius)
@@ -274,18 +276,121 @@ func _step_enemies() -> void:
 			_damage_player(_stat_i(e.type, "contact_damage"))
 			e.contact_cooldown = _stat_i(e.type, "contact_cooldown_ticks")
 
-		var proj_speed := _stat_f(e.type, "proj_speed")
-		if proj_speed > 0.0:
-			if e.fire_cooldown > 0:
-				e.fire_cooldown -= 1
-			elif dist <= preferred * 1.15:
-				var p := State.Projectile.new()
-				p.pos = e.pos + dir * (radius + 6.0)
-				p.vel = dir * proj_speed
-				p.ttl = _stat_i(e.type, "proj_ttl_ticks")
-				p.damage = _stat_i(e.type, "proj_damage")
-				state.enemy_projectiles.append(p)
-				e.fire_cooldown = _stat_i(e.type, "fire_cooldown_ticks")
+
+## Roaming: behavior-specific approach movement, plus watching for the moment
+## to start an attack windup. fire_cooldown is the universal between-attacks
+## timer and only runs down while roaming.
+func _step_roam(e: State.Enemy, dir: Vector2, dist: float) -> void:
+	if e.fire_cooldown > 0:
+		e.fire_cooldown -= 1
+	var speed := _stat_f(e.type, "speed")
+	match _stat_s(e.type, "behavior"):
+		"diver":
+			e.vel = dir * speed
+			if e.fire_cooldown == 0 and dist <= _stat_f(e.type, "dive_range"):
+				_begin_windup(e, dir)
+		"volley":
+			var preferred := _stat_f(e.type, "preferred_range")
+			var advance := 1.0
+			if dist < preferred * 0.6:
+				advance = -1.0
+			elif dist <= preferred:
+				advance = 0.0
+			e.vel = dir * speed * advance
+			if e.fire_cooldown == 0 and dist <= preferred * 1.15:
+				# Lead the shot: lock aim at where the player will be if they
+				# keep moving — standing still or changing course both work.
+				var lead := float(_stat_i(e.type, "lead_ticks")) * DT
+				var aim := state.player_pos + state.player_vel * lead - e.pos
+				_begin_windup(e, aim.normalized() if aim.length() > 0.001 else dir)
+		"slammer":
+			e.vel = dir * speed
+			if e.fire_cooldown == 0 and dist <= _stat_f(e.type, "slam_range"):
+				_begin_windup(e, dir)
+		_:
+			e.vel = dir * speed
+
+
+func _begin_windup(e: State.Enemy, dir: Vector2) -> void:
+	e.phase = PHASE_WINDUP
+	e.phase_ticks = _stat_i(e.type, "windup_ticks")
+	e.attack_dir = dir
+	e.vel = Vector2.ZERO
+
+
+## Windup: rooted and telegraphing. When it expires the attack commits along
+## the direction locked at windup start.
+func _step_windup(e: State.Enemy) -> void:
+	e.vel = Vector2.ZERO
+	e.phase_ticks -= 1
+	if e.phase_ticks > 0:
+		return
+	match _stat_s(e.type, "behavior"):
+		"diver":
+			e.phase = PHASE_COMMIT
+			e.phase_ticks = _stat_i(e.type, "dive_ticks")
+		"volley":
+			e.phase = PHASE_COMMIT
+			e.shots_left = _stat_i(e.type, "volley_shots")
+			_fire_volley_shot(e)
+		"slammer":
+			_resolve_slam(e)
+
+
+func _step_commit(e: State.Enemy) -> void:
+	match _stat_s(e.type, "behavior"):
+		"diver":
+			e.vel = e.attack_dir * _stat_f(e.type, "dive_speed")
+			e.phase_ticks -= 1
+			if e.phase_ticks <= 0:
+				_begin_recover(e)
+		"volley":
+			e.vel = Vector2.ZERO
+			e.phase_ticks -= 1
+			if e.phase_ticks <= 0:
+				if e.shots_left > 0:
+					_fire_volley_shot(e)
+				else:
+					_begin_recover(e)
+		_:
+			_begin_recover(e)
+
+
+func _begin_recover(e: State.Enemy) -> void:
+	e.phase = PHASE_RECOVER
+	e.phase_ticks = _stat_i(e.type, "recover_ticks")
+	e.fire_cooldown = _stat_i(e.type, "fire_cooldown_ticks")
+	e.vel = Vector2.ZERO
+
+
+## One volley round along the locked attack direction.
+func _fire_volley_shot(e: State.Enemy) -> void:
+	var radius := _stat_f(e.type, "radius")
+	var p := State.Projectile.new()
+	p.pos = e.pos + e.attack_dir * (radius + 6.0)
+	p.vel = e.attack_dir * _stat_f(e.type, "proj_speed")
+	p.ttl = _stat_i(e.type, "proj_ttl_ticks")
+	p.damage = _stat_i(e.type, "proj_damage")
+	state.enemy_projectiles.append(p)
+	e.shots_left -= 1
+	e.phase_ticks = _stat_i(e.type, "shot_gap_ticks")
+
+
+## The slam lands the tick its windup ends: AoE damage + knockback to the
+## player, and it shatters cover caught in the ring — the enemy edits the map.
+func _resolve_slam(e: State.Enemy) -> void:
+	var slam_radius := _stat_f(e.type, "slam_radius")
+	if _circles_hit(e.pos, slam_radius, state.player_pos, player_radius):
+		_damage_player(_stat_i(e.type, "slam_damage"))
+		var push := state.player_pos - e.pos
+		var push_dir := push.normalized() if push.length() > 0.001 else Vector2.DOWN
+		state.dodge_vel += push_dir * _stat_f(e.type, "slam_knockback")
+	var block_damage := _stat_i(e.type, "slam_block_damage")
+	for b: State.Block in state.blocks:
+		if _circle_hits_aabb(e.pos, slam_radius, b.pos, b.size):
+			b.hp -= block_damage
+	_settle_blocks()
+	_begin_recover(e)
 
 
 ## Pairwise push-apart so enemies read as a mob, not a stack.
@@ -337,6 +442,12 @@ func _step_enemy_projectiles() -> void:
 			survivors.append(p)
 	state.enemy_projectiles = survivors
 
+	_settle_blocks()
+
+
+## Sweep destroyed blocks and bank their fragments. Called after anything
+## that can damage blocks (projectiles, enemy fire, slams).
+func _settle_blocks() -> void:
 	var standing: Array[State.Block] = []
 	for b: State.Block in state.blocks:
 		if b.hp > 0:
@@ -372,6 +483,10 @@ func _stat_f(type: String, key: String) -> float:
 
 func _stat_i(type: String, key: String) -> int:
 	return int(enemy_types[type][key])
+
+
+func _stat_s(type: String, key: String) -> String:
+	return String(enemy_types[type][key])
 
 
 func _outside_arena(pos: Vector2) -> bool:
