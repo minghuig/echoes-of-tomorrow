@@ -21,6 +21,17 @@ class Enemy extends RefCounted:
 	var type: String = ""
 	var fire_cooldown: int = 0
 	var contact_cooldown: int = 0
+	## Attack state machine: 0 roam, 1 windup, 2 commit, 3 recover (constants
+	## live in SimCore). Windup telegraphs, commit is locked-in, recover is the
+	## punish window.
+	var phase: int = 0
+	## Ticks remaining in the current non-roam phase.
+	var phase_ticks: int = 0
+	## Direction locked at windup start; the commit follows it exactly, so
+	## telegraphs never lie.
+	var attack_dir: Vector2 = Vector2.ZERO
+	## Volley shots still to fire this commit.
+	var shots_left: int = 0
 
 class PendingSpawn extends RefCounted:
 	var tick: int = 0
@@ -87,6 +98,10 @@ func serialize() -> PackedByteArray:
 		buf.put_utf8_string(e.type)
 		buf.put_32(e.fire_cooldown)
 		buf.put_32(e.contact_cooldown)
+		buf.put_32(e.phase)
+		buf.put_32(e.phase_ticks)
+		_put_vec2(buf, e.attack_dir)
+		buf.put_32(e.shots_left)
 	buf.put_u32(enemy_projectiles.size())
 	for p: Projectile in enemy_projectiles:
 		_put_projectile(buf, p)

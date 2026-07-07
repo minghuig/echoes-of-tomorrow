@@ -675,7 +675,7 @@ func _snapshot_blocks() -> Dictionary:
 func _snapshot_enemies() -> Dictionary:
 	var by_ref := {}
 	for e: SimStateScript.Enemy in _core.state.enemies:
-		by_ref[e] = {"hp": e.hp, "pos": e.pos, "type": e.type}
+		by_ref[e] = {"hp": e.hp, "pos": e.pos, "type": e.type, "phase": e.phase}
 	return by_ref
 
 
@@ -708,6 +708,7 @@ func _emit_feel_events(
 	var kills := 0
 	var heavy_kill := false
 	var enemy_hits := 0
+	var slams := 0
 	for key in pre_enemies:
 		var e: SimStateScript.Enemy = key
 		var prev: Dictionary = pre_enemies[key]
@@ -720,6 +721,15 @@ func _emit_feel_events(
 		elif e.hp < int(prev["hp"]):
 			enemy_hits += 1
 			_fx.enemy_hit(e.pos, _enemy_color(type))
+		# A slammer that left WINDUP for RECOVER landed its slam this tick.
+		if now_enemies.has(e) \
+				and int(prev["phase"]) == SimCoreScript.PHASE_WINDUP \
+				and e.phase == SimCoreScript.PHASE_RECOVER \
+				and String(_core.enemy_types[type]["behavior"]) == "slammer":
+			slams += 1
+			var slam_radius: float = _core.enemy_types[type]["slam_radius"]
+			_fx.ring(e.pos, Color.WHITE, radius, slam_radius, 0.28, 6.0)
+			_fx.ring(e.pos, _enemy_color(type), radius * 0.6, slam_radius * 0.8, 0.22, 4.0)
 
 	if block_destroyed > 0:
 		_hitstop_frames = maxi(_hitstop_frames, HITSTOP_DESTROY_FRAMES)
@@ -738,6 +748,10 @@ func _emit_feel_events(
 		_sfx_enemy_die.play()
 	elif enemy_hits > 0:
 		_sfx_enemy_hit.play()
+
+	if slams > 0:
+		_shake = maxf(_shake, SHAKE_DESTROY)
+		_sfx_break.play()
 
 	if _core.state.player_hp < pre_hp:
 		_hurt_frames = HURT_FRAMES

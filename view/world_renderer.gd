@@ -28,6 +28,9 @@ const COLOR_INFANTRY := Color("e05e51")
 const COLOR_HEAVY := Color("ff7a4f")
 const COLOR_GHOST := Color(0.247, 0.816, 0.831, 0.35)
 const COLOR_GHOST_PROJ := Color(0.247, 0.816, 0.831, 0.22)
+## Windup warnings: danger red that heats toward white as the attack commits.
+const COLOR_TELEGRAPH := Color("ff4d42")
+const COLOR_TELEGRAPH_HOT := Color("ffe9dc")
 
 var core: SimCoreScript
 var ghost_core: SimCoreScript = null
@@ -140,20 +143,80 @@ func _draw_block_corners(rect: Rect2, color: Color) -> void:
 
 ## The assault, rendered as hostile holo constructs. Each type keeps its M5
 ## silhouette but gains rim glow, a health-driven dim, and an aim indicator.
+## Telegraphs draw first (under every body) so a windup is never occluded.
 func _draw_enemies(state: SimStateScript) -> void:
+	for e: SimStateScript.Enemy in state.enemies:
+		if e.phase == SimCoreScript.PHASE_WINDUP:
+			_draw_telegraph(e)
+
 	for e: SimStateScript.Enemy in state.enemies:
 		var stats: Dictionary = core.enemy_types[e.type]
 		var radius: float = stats["radius"]
 		var max_hp := int(stats["hp"])
 		var strength := clampf(float(e.hp) / float(max_hp), 0.0, 1.0)
+		# Recovering enemies read as spent — the punish window is visible.
+		if e.phase == SimCoreScript.PHASE_RECOVER:
+			strength *= 0.45
 		var toward := (state.player_pos - e.pos).normalized()
+		if e.phase == SimCoreScript.PHASE_WINDUP \
+				or e.phase == SimCoreScript.PHASE_COMMIT:
+			toward = e.attack_dir
 		match e.type:
 			"drone":
+				if e.phase == SimCoreScript.PHASE_COMMIT:
+					# Dive streak behind the committed lunge.
+					draw_line(
+						e.pos - e.attack_dir * 26.0, e.pos,
+						Color(COLOR_DRONE, 0.5), 4.0)
 				_draw_enemy_drone(e.pos, radius, strength, toward)
 			"infantry":
-				_draw_enemy_infantry(e.pos, radius, strength, toward)
+				_draw_enemy_infantry(e.pos, radius, strength, toward, e)
 			_:
 				_draw_enemy_heavy(e.pos, radius, strength, toward)
+
+
+## Windup warning, per behavior: divers draw their exact committed lane,
+## volleys their locked firing line, slammers the ring that is about to land.
+## Everything heats red -> white as phase_ticks runs out; the geometry is
+## truthful because the sim locked attack_dir at windup start.
+func _draw_telegraph(e: SimStateScript.Enemy) -> void:
+	var stats: Dictionary = core.enemy_types[e.type]
+	var windup := maxf(float(stats["windup_ticks"]), 1.0)
+	var t := 1.0 - float(e.phase_ticks) / windup
+	var flash := 0.7 + 0.3 * sin(_time * 22.0)
+	var color := COLOR_TELEGRAPH.lerp(COLOR_TELEGRAPH_HOT, t * t)
+	var radius: float = stats["radius"]
+
+	match String(stats["behavior"]):
+		"diver":
+			var reach: float = (
+				float(stats["dive_speed"]) * float(stats["dive_ticks"])
+				* SimCoreScript.DT + radius * 2.0)
+			var to := e.pos + e.attack_dir * reach
+			draw_line(e.pos, to, Color(color, (0.10 + 0.38 * t) * flash), 3.0)
+			var perp := e.attack_dir.orthogonal() * 6.0
+			var base := to - e.attack_dir * 10.0
+			draw_colored_polygon(
+				PackedVector2Array([to, base + perp, base - perp]),
+				Color(color, (0.25 + 0.6 * t) * flash))
+		"volley":
+			var reach := float(stats["preferred_range"]) * 1.25
+			var muzzle := e.pos + e.attack_dir * (radius + 6.0)
+			draw_line(
+				muzzle, muzzle + e.attack_dir * reach,
+				Color(color, (0.12 + 0.38 * t) * flash), 2.5)
+			# Shot pips march toward the muzzle as the volley loads.
+			for i in int(stats["volley_shots"]):
+				var d := radius + 14.0 + float(i) * 10.0
+				draw_circle(
+					e.pos + e.attack_dir * d, 2.5,
+					Color(color, (0.2 + 0.7 * t) * flash))
+		"slammer":
+			var r: float = stats["slam_radius"]
+			draw_circle(e.pos, r * t, Color(color, 0.10 * flash))
+			draw_arc(
+				e.pos, r, 0.0, TAU, 48,
+				Color(color, (0.22 + 0.55 * t) * flash), 2.0 + 3.5 * t)
 
 
 func _draw_enemy_drone(pos: Vector2, radius: float, strength: float, toward: Vector2) -> void:
@@ -167,7 +230,10 @@ func _draw_enemy_drone(pos: Vector2, radius: float, strength: float, toward: Vec
 	draw_circle(pos + toward * (radius * 0.2), radius * 0.28, Color(COLOR_EYE, 0.8))
 
 
-func _draw_enemy_infantry(pos: Vector2, radius: float, strength: float, toward: Vector2) -> void:
+func _draw_enemy_infantry(
+	pos: Vector2, radius: float, strength: float, toward: Vector2,
+	e: SimStateScript.Enemy
+) -> void:
 	var half := Vector2(radius, radius)
 	var rect := Rect2(pos - half, half * 2.0)
 	var fill := COLOR_INFANTRY.lerp(COLOR_BG, (1.0 - strength) * 0.7)
@@ -176,8 +242,18 @@ func _draw_enemy_infantry(pos: Vector2, radius: float, strength: float, toward: 
 	draw_rect(rect, fill)
 	draw_rect(rect, Color(COLOR_INFANTRY, 0.95), false, 2.0)
 	_draw_block_corners(rect, Color(COLOR_INFANTRY, 0.9))
-	# Muzzle line toward the player.
-	draw_line(pos, pos + toward * (radius + 8.0), COLOR_INFANTRY, 3.0)
+	# Muzzle line: bright when a volley is ready or firing, dim mid-reload —
+	# the reload window is meant to be read and punished.
+	var reloading := e.phase == SimCoreScript.PHASE_ROAM and e.fire_cooldown > 0
+	var muzzle_alpha := 0.35 if reloading else 1.0
+	draw_line(pos, pos + toward * (radius + 8.0), Color(COLOR_INFANTRY, muzzle_alpha), 3.0)
+	if reloading:
+		# Reload progress ticks up over the barrel.
+		var frac := 1.0 - float(e.fire_cooldown) / maxf(
+			float(core.enemy_types[e.type]["fire_cooldown_ticks"]), 1.0)
+		draw_rect(
+			Rect2(pos + Vector2(-radius, -radius - 7.0), Vector2(radius * 2.0 * frac, 3.0)),
+			Color(COLOR_INFANTRY, 0.55))
 
 
 func _draw_enemy_heavy(pos: Vector2, radius: float, strength: float, toward: Vector2) -> void:
