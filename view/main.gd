@@ -24,6 +24,9 @@ const BackgroundScript := preload("res://view/background.gd")
 const WorldScript := preload("res://view/world_renderer.gd")
 const FxScript := preload("res://view/fx.gd")
 const OverlayScript := preload("res://view/overlay.gd")
+## The looping main-game battle anthem (view flavor; the sim never knows).
+const MusicStream := preload("res://content/music/last_run_anthem.mp3")
+const MUSIC_VOLUME_DB: float = -9.0
 
 ## A finished run, kept in memory as the data substrate for ghost replay.
 ## The loadout is part of the record: a run only replays exactly under the
@@ -214,6 +217,11 @@ var _sfx_hurt: AudioStreamPlayer
 var _sfx_wave: AudioStreamPlayer
 var _sfx_buy: AudioStreamPlayer
 
+## Looping anthem for live play only — paused (not stopped, so it resumes in
+## place) whenever the view leaves PLAYING for the Between, the credits, or the
+## pause menu. See _update_music().
+var _music: AudioStreamPlayer
+
 ## Virtual touch controls — active only on web with a touchscreen.
 var _touch := TouchInputScript.new()
 
@@ -250,6 +258,7 @@ func _ready() -> void:
 	_sfx_hurt = _make_sfx_player(SfxScript.player_hurt(), -5.0)
 	_sfx_wave = _make_sfx_player(SfxScript.wave_horn(), -8.0)
 	_sfx_buy = _make_sfx_player(SfxScript.buy_blip(), -8.0)
+	_music = _make_music_player()
 
 	# Wire the render nodes. References that outlive a run are set once here;
 	# the per-run SimCore is (re)pointed in _start_run().
@@ -291,6 +300,29 @@ func _make_sfx_player(stream: AudioStreamWAV, volume_db: float) -> AudioStreamPl
 	player.volume_db = volume_db
 	add_child(player)
 	return player
+
+
+## The looping main-game anthem, started once and left running for the life of
+## the scene (playback is gated by pausing, not restarting — see _update_music).
+## Loop is set here in code, not via the import: `.import` files are gitignored,
+## so import options don't survive a fresh checkout — the code is the one source
+## of truth.
+func _make_music_player() -> AudioStreamPlayer:
+	var stream: AudioStreamMP3 = MusicStream
+	stream.loop = true
+	var player := AudioStreamPlayer.new()
+	player.stream = stream
+	player.volume_db = MUSIC_VOLUME_DB
+	add_child(player)
+	player.play()
+	return player
+
+
+## Music plays only during live combat; everywhere else (the Between, credits,
+## the pause menu) it pauses in place so returning to play resumes the anthem
+## seamlessly rather than restarting it.
+func _update_music() -> void:
+	_music.stream_paused = _mode != Mode.PLAYING
 
 
 func _physics_process(_delta: float) -> void:
@@ -415,6 +447,7 @@ func _physics_process(_delta: float) -> void:
 ## Push feel state onto the render nodes and reconcile mode visibility. Called
 ## at the end of every view tick (the sim never reads any of this back).
 func _present() -> void:
+	_update_music()
 	_world.position = _shake_offset
 	_fx.position = _shake_offset
 	_world.recoil = _recoil
