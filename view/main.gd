@@ -80,6 +80,20 @@ const SHAKE_DECAY: float = 0.85
 const HURT_FRAMES: int = 18
 const WAVE_BANNER_FRAMES: int = 110
 
+# The held breath: hold `focus` to run the world at quarter speed. Purely
+# view-side pacing — the sim is stepped every FOCUS_STEP_DIV-th view frame
+# (skipped frames record no command, exactly like hit-stop), so command logs
+# stay 1:1 with sim ticks and replays/ghosts are untouched. The meter drains
+# in wall-clock frames while held and refills while released.
+const FOCUS_STEP_DIV: int = 4
+const FOCUS_MAX: float = 180.0
+const FOCUS_DRAIN: float = 1.0
+const FOCUS_REGEN: float = 0.22
+## Hit-stop frames when a fresh windup/barrage telegraph appears (the world
+## hitches when death looks at you), rate-limited by a cooldown.
+const HITCH_FRAMES: int = 6
+const HITCH_COOLDOWN_FRAMES: int = 150
+
 # Additive-FX + recoil tuning.
 const TRAIL_LENGTH: int = 9
 const RECOIL_KICK: float = 3.5
@@ -144,6 +158,11 @@ var _ghost_tick: int = 0
 # never be the sim's RNG.
 var _hitstop_frames: int = 0
 var _shake: float = 0.0
+# Held-breath state (view-only; see FOCUS_* above).
+var _focus_meter: float = FOCUS_MAX
+var _focus_active: bool = false
+var _focus_gate: int = 0
+var _hitch_cooldown: int = 0
 var _shake_offset: Vector2 = Vector2.ZERO
 var _recoil: Vector2 = Vector2.ZERO
 var _fx_rng := RandomNumberGenerator.new()
@@ -309,6 +328,20 @@ func _physics_process(_delta: float) -> void:
 		_present()
 		return
 
+	# The held breath: while held (and the meter lasts), only every
+	# FOCUS_STEP_DIV-th view frame steps the sim. Skipped frames render and
+	# decay fx but record no command — the hit-stop contract.
+	_focus_active = Input.is_action_pressed("focus") and _focus_meter > 0.0
+	if _focus_active:
+		_focus_meter = maxf(_focus_meter - FOCUS_DRAIN, 0.0)
+		_focus_gate += 1
+		if _focus_gate % FOCUS_STEP_DIV != 0:
+			_decay_fx()
+			_present()
+			return
+	else:
+		_focus_meter = minf(_focus_meter + FOCUS_REGEN, FOCUS_MAX)
+
 	var state: SimStateScript = _core.state
 	var pre_fire_cooldown := state.fire_cooldown
 	var pre_hp := state.player_hp
@@ -359,6 +392,8 @@ func _present() -> void:
 	_overlay.credits_ticks = _credits_ticks
 	_overlay.ghost_active = _ghost_active()
 	_overlay.using_gamepad = _using_gamepad
+	_overlay.focus_fraction = _focus_meter / FOCUS_MAX
+	_overlay.focus_active = _focus_active
 	_overlay.display_label = _display.label()
 	_overlay.mode_before_pause = _mode_before_pause
 	_overlay.slot_summaries = _slot_summaries()
@@ -622,6 +657,10 @@ func _start_run() -> void:
 	_recoil = Vector2.ZERO
 	_hurt_frames = 0
 	_wave_banner_frames = 0
+	_focus_meter = FOCUS_MAX
+	_focus_active = false
+	_focus_gate = 0
+	_hitch_cooldown = 0
 	_run_banked = false
 	_fresh_intel = []
 	_proj_prev.clear()
@@ -770,6 +809,21 @@ func _emit_feel_events(
 		_wave_banner_frames = WAVE_BANNER_FRAMES
 		_sfx_wave.play()
 
+	# The world hitches for a beat when a fresh threat telegraphs — a windup
+	# starting or a barrage being called in — rate-limited so dense waves
+	# don't turn into a slideshow.
+	if _hitch_cooldown == 0:
+		var fresh_telegraph := false
+		for key in pre_enemies:
+			var e: SimStateScript.Enemy = key
+			if now_enemies.has(e) and e.phase == SimCoreScript.PHASE_WINDUP \
+					and int(pre_enemies[key]["phase"]) != SimCoreScript.PHASE_WINDUP:
+				fresh_telegraph = true
+				break
+		if fresh_telegraph:
+			_hitstop_frames = maxi(_hitstop_frames, HITCH_FRAMES)
+			_hitch_cooldown = HITCH_COOLDOWN_FRAMES
+
 
 ## Shells that left pending_impacts this tick landed: explosion fx + shake.
 func _emit_impact_events(
@@ -896,6 +950,8 @@ func _decay_fx() -> void:
 		_hurt_frames -= 1
 	if _wave_banner_frames > 0:
 		_wave_banner_frames -= 1
+	if _hitch_cooldown > 0:
+		_hitch_cooldown -= 1
 
 
 ## Translate raw input into this tick's Command (the only path into the sim).
