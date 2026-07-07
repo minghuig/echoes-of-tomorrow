@@ -1,6 +1,7 @@
 # Godot 4
 .godot/
-*.import
+# NOTE: *.import files ARE committed. Godot regenerates .godot/imported/ from
+# them on a cold checkout, so CI's headless export finds the imported assets.
 
 # Exports
 build/

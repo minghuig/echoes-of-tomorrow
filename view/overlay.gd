@@ -15,6 +15,12 @@ const MODE_PLAYING: int = 0
 const MODE_BETWEEN: int = 1
 const MODE_CREDITS: int = 2
 const MODE_PAUSED: int = 3
+## Mirrors main.gd's Mode enum, where TITLE is last so the 0..3 ids above stay
+## put (they are pushed across as ints).
+const MODE_TITLE: int = 4
+
+const TITLE_BG_PATH := "res://assets/art/title_bg.png"
+const TITLE_LOGO_PATH := "res://assets/art/title_logo.png"
 
 const HURT_FRAMES: int = 18
 
@@ -99,6 +105,13 @@ var _credits_lines: Array = []
 var _reenter_prompt: String = ""
 var _reenter_prompt_gamepad: String = ""
 
+# Title-screen key art (loaded once) and the deploy prompt per input device.
+var _title_bg: Texture2D
+var _title_logo: Texture2D
+var _title_prompt: String = ""
+var _title_prompt_gamepad: String = ""
+var _title_prompt_touch: String = ""
+
 var _time: float = 0.0
 var _vignette_tex: GradientTexture2D
 var _band_tex: GradientTexture2D
@@ -108,11 +121,20 @@ var _scan_tex: ImageTexture
 func _ready() -> void:
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
-	var ending: Dictionary = JSON.parse_string(
-		FileAccess.get_file_as_string(STRINGS_PATH))["post_l3_ending"]
+	var strings: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(STRINGS_PATH))
+	var ending: Dictionary = strings["post_l3_ending"]
 	_credits_lines = ending["credits"]
 	_reenter_prompt = ending["reenter_prompt"]
 	_reenter_prompt_gamepad = ending["reenter_prompt_gamepad"]
+
+	var title: Dictionary = strings["title"]
+	_title_prompt = title["prompt"]
+	_title_prompt_gamepad = title["prompt_gamepad"]
+	_title_prompt_touch = title["prompt_touch"]
+	# Load may return null in a headless import before assets exist; the draw
+	# path guards for it and falls back to a flat wash.
+	_title_bg = load(TITLE_BG_PATH) as Texture2D
+	_title_logo = load(TITLE_LOGO_PATH) as Texture2D
 
 	var vg := Gradient.new()
 	vg.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
@@ -156,6 +178,11 @@ func _draw() -> void:
 	# larger than the screen now that the camera scrolls, so everything here
 	# lays out against the viewport, never the arena.
 	var screen: Vector2 = get_viewport_rect().size
+
+	if mode == MODE_TITLE:
+		_draw_title(screen)
+		_draw_crt(screen)
+		return
 
 	if mode == MODE_CREDITS:
 		_draw_credits(screen)
@@ -602,6 +629,43 @@ func _draw_credits(screen: Vector2) -> void:
 		draw_string(
 			font, Vector2((arena.size.x - prompt_width) * 0.5, arena.size.y - 48.0),
 			prompt, HORIZONTAL_ALIGNMENT_CENTER, -1, CREDITS_FONT_SIZE, COLOR_AIM)
+
+
+## The title screen: key art filling the frame, the wordmark up top, and a
+## pulsing deploy prompt. Pre-reveal chrome — the art is a human-war-hero beach,
+## the prompt vocabulary stays clean (see the reveal-discipline lint).
+func _draw_title(screen: Vector2) -> void:
+	if _title_bg != null:
+		_draw_cover(_title_bg, screen)
+	else:
+		draw_rect(Rect2(Vector2.ZERO, screen), COLOR_BG, true)
+	# A gentle top-and-bottom darken so the wordmark and prompt stay legible
+	# over a busy battle scene.
+	draw_rect(Rect2(Vector2.ZERO, screen), Color(0.02, 0.03, 0.06, 0.28), true)
+
+	if _title_logo != null:
+		var target_w := screen.x * 0.6
+		var scale := target_w / float(_title_logo.get_width())
+		var size := Vector2(_title_logo.get_width(), _title_logo.get_height()) * scale
+		var pos := Vector2((screen.x - size.x) * 0.5, screen.y * 0.1)
+		draw_texture_rect(_title_logo, Rect2(pos, size), false)
+
+	var prompt := _title_prompt
+	if _touch_enabled():
+		prompt = _title_prompt_touch
+	elif using_gamepad:
+		prompt = _title_prompt_gamepad
+	# Slow breathing pulse on the prompt.
+	var pulse := 0.45 + 0.55 * (0.5 + 0.5 * sin(_time * 3.0))
+	_draw_centered(ThemeDB.fallback_font, prompt, screen.y * 0.84, 26, Color(COLOR_AIM, pulse))
+
+
+## Scale `tex` to fully cover `screen` (fill, cropping overflow), centered.
+func _draw_cover(tex: Texture2D, screen: Vector2) -> void:
+	var ts := Vector2(tex.get_width(), tex.get_height())
+	var s := maxf(screen.x / ts.x, screen.y / ts.y)
+	var size := ts * s
+	draw_texture_rect(tex, Rect2((screen - size) * 0.5, size), false)
 
 
 func _touch_enabled() -> bool:

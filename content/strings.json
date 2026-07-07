@@ -1,4 +1,9 @@
 {
+	"title": {
+		"prompt": "PRESS SPACE TO DEPLOY",
+		"prompt_gamepad": "PRESS START TO DEPLOY",
+		"prompt_touch": "TAP TO DEPLOY"
+	},
 	"post_l3_ending": {
 		"credits": [
 			"ECHOES OF TOMORROW",
