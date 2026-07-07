@@ -1,6 +1,6 @@
 # Gameplay Paths — Making the Loop Matter
 
-**Status:** options document, no decision taken. When a path (or combination) is chosen, it gets a dated entry in `DECISIONS.md`.
+**Status:** options document, no decision taken. When a path (or combination) is chosen, it gets a dated entry in `DECISIONS.md`. Companion doc: `COMBAT_FEATURES.md` — the player/enemy verb catalog and the real-time vs. bullet-time vs. turn-based tempo decision.
 
 ## 0. The problem
 
