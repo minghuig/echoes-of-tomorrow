@@ -54,6 +54,14 @@ var _wave_interval_ticks: int
 var _trickle_interval_ticks: int
 var _spawn_edge_margin: float
 
+# The authored assault timeline (barrages, flank entries) and artillery
+# tuning, from waves.json. Craters cap so the slow-field stays bounded.
+var _events: Array
+var _artillery: Dictionary
+var _recurring_barrage: Dictionary
+var _crater_slow: float
+var _max_craters: int
+
 # From the loadout: extra fragments stripped per kill (Exfiltration branch).
 var _kill_fragment_add: int = 0
 
@@ -91,6 +99,11 @@ func setup(seed_value: int, loadout: Dictionary = {}) -> void:
 	_wave_interval_ticks = int(waves_cfg["wave_interval_ticks"])
 	_trickle_interval_ticks = int(waves_cfg["trickle_interval_ticks"])
 	_spawn_edge_margin = waves_cfg["spawn_edge_margin"]
+	_events = waves_cfg.get("events", [])
+	_artillery = waves_cfg.get("artillery", {})
+	_recurring_barrage = waves_cfg.get("recurring_barrage", {})
+	_crater_slow = float(_artillery.get("crater_slow", 1.0))
+	_max_craters = int(_artillery.get("max_craters", 48))
 
 	# Sentience-tree modifiers. Integer/rounded math so identical loadouts
 	# always resolve to identical tuning.
@@ -124,9 +137,11 @@ func step(cmd: SimCommand) -> void:
 		_step_player(cmd)
 		_step_projectiles()
 		_schedule_waves()
+		_schedule_events()
 		_step_spawns()
 		_step_enemies()
 		_step_enemy_projectiles()
+		_step_impacts()
 		_cull_dead_enemies()
 	state.tick += 1
 
@@ -150,7 +165,7 @@ func _step_player(cmd: SimCommand) -> void:
 		state.iframe_ticks = _dodge_iframe_ticks
 
 	state.player_vel = move * _player_speed + state.dodge_vel
-	state.player_pos += state.player_vel * DT
+	state.player_pos += state.player_vel * DT * _crater_factor(state.player_pos)
 	state.dodge_vel *= _dodge_decay
 	if state.dodge_vel.length_squared() < 1.0:
 		state.dodge_vel = Vector2.ZERO
@@ -232,6 +247,108 @@ func _wave_composition(index: int) -> Dictionary:
 	return comp
 
 
+## Fire authored assault events whose tick has arrived, plus the recurring
+## barrage cadence past the authored timeline. Event order in the data is
+## chronological; event_index walks it exactly once per run.
+func _schedule_events() -> void:
+	while state.event_index < _events.size() \
+			and int(_events[state.event_index]["tick"]) <= state.tick:
+		_fire_event(_events[state.event_index])
+		state.event_index += 1
+
+	if not _recurring_barrage.is_empty():
+		var start := int(_recurring_barrage["start_tick"])
+		var interval := int(_recurring_barrage["interval_ticks"])
+		if state.tick >= start and (state.tick - start) % interval == 0:
+			var rounds := (state.tick - start) / interval
+			var growth_every := int(_recurring_barrage.get("count_growth_every", 3))
+			var count := int(_recurring_barrage["count"]) + rounds / growth_every
+			_fire_barrage(count, _artillery["zone"])
+
+
+func _fire_event(event: Dictionary) -> void:
+	match String(event["kind"]):
+		"barrage":
+			_fire_barrage(int(event["count"]), event.get("zone", _artillery["zone"]))
+		"flank":
+			_fire_flank(String(event["edge"]), event["comp"])
+
+
+## Schedule `count` shells over `zone`, staggered so the barrage rolls across
+## the ground instead of landing as one stamp. Positions draw from the sim RNG
+## at schedule time (same contract as wave spawn jitter).
+func _fire_barrage(count: int, zone: Dictionary) -> void:
+	var telegraph := int(_artillery["telegraph_ticks"])
+	var stagger := int(_artillery["stagger_ticks"])
+	for i in count:
+		var imp := State.Impact.new()
+		imp.pos = Vector2(
+			rng.randf_range(float(zone["x"]), float(zone["x"]) + float(zone["w"])),
+			rng.randf_range(float(zone["y"]), float(zone["y"]) + float(zone["h"])))
+		imp.land_tick = state.tick + telegraph + i * stagger
+		imp.radius = float(_artillery["radius"])
+		imp.damage = int(_artillery["damage"])
+		imp.crater_radius = float(_artillery["crater_radius"])
+		state.pending_impacts.append(imp)
+
+
+## A squad entering from a side edge at scripted ticks — spawn edges become
+## data instead of "everything walks in from the sea".
+func _fire_flank(edge: String, comp: Dictionary) -> void:
+	var slot := 0
+	for type: String in comp:
+		for i in int(comp[type]):
+			var radius := _stat_f(type, "radius")
+			var s := State.PendingSpawn.new()
+			s.tick = state.tick + slot * _trickle_interval_ticks
+			s.type = type
+			var x := radius + 4.0 if edge == "left" else state.arena_size.x - radius - 4.0
+			s.pos = Vector2(x, rng.randf_range(140.0, state.arena_size.y * 0.6))
+			state.pending_spawns.append(s)
+			slot += 1
+
+
+## Land every shell whose tick arrived: AoE damage to the player, enemies,
+## and cover alike (artillery doesn't care whose side you're on), then leave
+## a crater. Baiting the assault into its own barrage is intended play.
+func _step_impacts() -> void:
+	if state.pending_impacts.is_empty():
+		return
+	var remaining: Array[State.Impact] = []
+	var hit_blocks := false
+	for imp: State.Impact in state.pending_impacts:
+		if imp.land_tick > state.tick:
+			remaining.append(imp)
+			continue
+		if _circles_hit(imp.pos, imp.radius, state.player_pos, player_radius):
+			_damage_player(imp.damage)
+		for e: State.Enemy in state.enemies:
+			if e.hp > 0 and _circles_hit(imp.pos, imp.radius, e.pos, _stat_f(e.type, "radius")):
+				e.hp -= imp.damage
+		var block_damage := int(_artillery["block_damage"])
+		for b: State.Block in state.blocks:
+			if _circle_hits_aabb(imp.pos, imp.radius, b.pos, b.size):
+				b.hp -= block_damage
+				hit_blocks = true
+		var crater := State.Crater.new()
+		crater.pos = imp.pos
+		crater.radius = imp.crater_radius
+		state.craters.append(crater)
+		while state.craters.size() > _max_craters:
+			state.craters.pop_front()
+	state.pending_impacts = remaining
+	if hit_blocks:
+		_settle_blocks()
+
+
+## Movement multiplier for ground movers standing in rough ground.
+func _crater_factor(pos: Vector2) -> float:
+	for c: State.Crater in state.craters:
+		if pos.distance_squared_to(c.pos) <= c.radius * c.radius:
+			return _crater_slow
+	return 1.0
+
+
 func _step_spawns() -> void:
 	while not state.pending_spawns.is_empty() and state.pending_spawns[0].tick <= state.tick:
 		var s: State.PendingSpawn = state.pending_spawns.pop_front()
@@ -262,7 +379,10 @@ func _step_enemies() -> void:
 					e.phase = PHASE_ROAM
 			_:
 				_step_roam(e, dir, dist)
-		e.pos += e.vel * DT
+		var factor := 1.0
+		if bool(enemy_types[e.type].get("ground", true)):
+			factor = _crater_factor(e.pos)
+		e.pos += e.vel * DT * factor
 
 		_separate(e, radius)
 		for b: State.Block in state.blocks:

@@ -38,6 +38,21 @@ class PendingSpawn extends RefCounted:
 	var type: String = ""
 	var pos: Vector2 = Vector2.ZERO
 
+## A scheduled artillery shell: telegraphed at pos until land_tick, then AoE
+## damage to everything in radius and a crater left behind.
+class Impact extends RefCounted:
+	var pos: Vector2 = Vector2.ZERO
+	var land_tick: int = 0
+	var radius: float = 0.0
+	var damage: int = 0
+	var crater_radius: float = 0.0
+
+## Rough ground left by artillery: slows ground movers inside for the rest of
+## the run. The war remodels the map.
+class Crater extends RefCounted:
+	var pos: Vector2 = Vector2.ZERO
+	var radius: float = 0.0
+
 var tick: int = 0
 
 var player_pos: Vector2 = Vector2.ZERO
@@ -57,12 +72,16 @@ var fragments: int = 0
 var kills: int = 0
 ## Next wave to be scheduled.
 var wave_index: int = 0
+## Next authored assault event to be scheduled.
+var event_index: int = 0
 
 var projectiles: Array[Projectile] = []
 var blocks: Array[Block] = []
 var enemies: Array[Enemy] = []
 var enemy_projectiles: Array[Projectile] = []
 var pending_spawns: Array[PendingSpawn] = []
+var pending_impacts: Array[Impact] = []
+var craters: Array[Crater] = []
 
 var arena_size: Vector2 = Vector2.ZERO
 
@@ -82,6 +101,7 @@ func serialize() -> PackedByteArray:
 	buf.put_32(fragments)
 	buf.put_32(kills)
 	buf.put_32(wave_index)
+	buf.put_32(event_index)
 	buf.put_u32(projectiles.size())
 	for p: Projectile in projectiles:
 		_put_projectile(buf, p)
@@ -110,6 +130,17 @@ func serialize() -> PackedByteArray:
 		buf.put_32(s.tick)
 		buf.put_utf8_string(s.type)
 		_put_vec2(buf, s.pos)
+	buf.put_u32(pending_impacts.size())
+	for imp: Impact in pending_impacts:
+		_put_vec2(buf, imp.pos)
+		buf.put_32(imp.land_tick)
+		buf.put_float(imp.radius)
+		buf.put_32(imp.damage)
+		buf.put_float(imp.crater_radius)
+	buf.put_u32(craters.size())
+	for c: Crater in craters:
+		_put_vec2(buf, c.pos)
+		buf.put_float(c.radius)
 	_put_vec2(buf, arena_size)
 	return buf.data_array
 

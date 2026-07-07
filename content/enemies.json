@@ -12,7 +12,8 @@
 		"recover_ticks": 45,
 		"dive_range": 240.0,
 		"dive_speed": 480.0,
-		"dive_ticks": 24
+		"dive_ticks": 24,
+		"ground": false
 	},
 	"infantry": {
 		"behavior": "volley",
@@ -31,7 +32,8 @@
 		"shot_gap_ticks": 9,
 		"proj_speed": 290.0,
 		"proj_ttl_ticks": 240,
-		"proj_damage": 9
+		"proj_damage": 9,
+		"ground": true
 	},
 	"heavy": {
 		"behavior": "slammer",
@@ -48,6 +50,7 @@
 		"slam_radius": 100.0,
 		"slam_damage": 26,
 		"slam_block_damage": 2,
-		"slam_knockback": 620.0
+		"slam_knockback": 620.0,
+		"ground": true
 	}
 }
