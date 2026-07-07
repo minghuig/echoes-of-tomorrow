@@ -66,6 +66,10 @@ func _doctor_save() -> void:
 		if parsed_save is Dictionary:
 			save = parsed_save
 	save["schematics"] = ["mine_dispenser"]
+	# Veteran knowledge so schedule-sense banners and death-sense overlays
+	# render in screenshots.
+	save["best_wave"] = 6
+	save["killed_by"] = {"drone": 1, "infantry": 2, "heavy": 1, "artillery": 1}
 	var out := FileAccess.open(path, FileAccess.WRITE)
 	if out != null:
 		out.store_string(JSON.stringify(save))

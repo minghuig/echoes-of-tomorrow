@@ -173,6 +173,29 @@ var _fx_rng := RandomNumberGenerator.new()
 var _hurt_frames: int = 0
 var _wave_banner_frames: int = 0
 var _banner_wave: int = 0
+## Schedule-sense line under the wave banner ("" when the wave is unknown).
+var _banner_composition: String = ""
+
+## Human-military display names for damage sources / enemy types (pre-L3
+## vocabulary — see reveal discipline).
+const SOURCE_NAMES := {
+	"drone": "STINGER",
+	"infantry": "RIFLE SQUAD",
+	"heavy": "CRUSHER",
+	"lancer": "LANCER",
+	"sapper": "SAPPER",
+	"mortar": "MORTAR BATTERY",
+	"artillery": "ARTILLERY",
+	"mine": "OWN MINE",
+}
+
+
+## "8× STINGER · 4× RIFLE SQUAD · 1× CRUSHER" from a wave composition dict.
+func _format_composition(comp: Dictionary) -> String:
+	var parts: Array[String] = []
+	for type: String in comp:
+		parts.append("%d× %s" % [int(comp[type]), SOURCE_NAMES.get(type, type.to_upper())])
+	return " · ".join(parts)
 
 # Interpolation-free tracer bookkeeping, keyed by projectile instance id.
 # Shared by reference with the world renderer.
@@ -423,6 +446,10 @@ func _update_camera() -> void:
 	_overlay.mine_stock = _core.state.mine_stock
 	_overlay.mines_unlocked = _meta.schematics.has("mine_dispenser")
 	_overlay.fresh_schematics = _fresh_schematics
+	_overlay.banner_composition = _banner_composition
+	_overlay.death_cause = SOURCE_NAMES.get(
+		_core.state.last_damage_source, _core.state.last_damage_source.to_upper())
+	_world.death_sense = _meta.killed_by
 	_overlay.display_label = _display.label()
 	_overlay.mode_before_pause = _mode_before_pause
 	_overlay.slot_summaries = _slot_summaries()
@@ -604,6 +631,10 @@ func _bank_run_results() -> void:
 	_meta.best_wave = maxi(_meta.best_wave, s.wave_index)
 	if s.player_down:
 		_meta.deaths += 1
+		# Death sense: dying to a thing teaches you that thing, permanently.
+		if not s.last_damage_source.is_empty():
+			_meta.killed_by[s.last_damage_source] = \
+				int(_meta.killed_by.get(s.last_damage_source, 0)) + 1
 	for schematic: String in s.schematics_found:
 		if not _meta.schematics.has(schematic):
 			_meta.schematics.append(schematic)
@@ -695,6 +726,7 @@ func _start_run() -> void:
 	_recoil = Vector2.ZERO
 	_hurt_frames = 0
 	_wave_banner_frames = 0
+	_banner_composition = ""
 	_focus_meter = FOCUS_MAX
 	_focus_active = false
 	_focus_gate = 0
@@ -851,6 +883,11 @@ func _emit_feel_events(
 	if _core.state.wave_index > pre_wave:
 		_banner_wave = _core.state.wave_index
 		_wave_banner_frames = WAVE_BANNER_FRAMES
+		# Schedule sense: a wave you have reached before announces itself.
+		_banner_composition = ""
+		if _banner_wave <= _meta.best_wave:
+			_banner_composition = _format_composition(
+				_core.wave_composition(_banner_wave - 1))
 		_sfx_wave.play()
 
 	# The world hitches for a beat when a fresh threat telegraphs — a windup

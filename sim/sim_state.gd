@@ -94,6 +94,9 @@ var fire_cooldown: int = 0
 var iframe_ticks: int = 0
 ## True once player_hp hit 0; the sim freezes (only tick advances).
 var player_down: bool = false
+## What last damaged the player (enemy type, "artillery", "mine") — the
+## meta layer reads this at death to convert the death into knowledge.
+var last_damage_source: String = ""
 
 ## Data fragments earned this run (blocks + enemy kills).
 var fragments: int = 0
@@ -140,6 +143,7 @@ func serialize() -> PackedByteArray:
 	buf.put_32(fire_cooldown)
 	buf.put_32(iframe_ticks)
 	buf.put_32(1 if player_down else 0)
+	buf.put_utf8_string(last_damage_source)
 	buf.put_32(fragments)
 	buf.put_32(kills)
 	buf.put_32(wave_index)

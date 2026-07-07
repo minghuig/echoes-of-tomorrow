@@ -46,6 +46,10 @@ var core: SimCoreScript
 var ghost_core: SimCoreScript = null
 var proj_trails: Dictionary[int, PackedVector2Array] = {}
 var recoil := Vector2.ZERO
+## Death sense (meta knowledge pushed by main): damage sources that have
+## killed the player, ever. Their warnings render louder, and their attack
+## rhythm becomes visible. The sim knows nothing of this.
+var death_sense: Dictionary = {}
 
 var _time: float = 0.0
 
@@ -119,6 +123,11 @@ func _draw_impact_warning(imp: SimStateScript.Impact, tick: int) -> void:
 	var outer := imp.radius * (1.0 + float(rem) * 0.012)
 	draw_arc(imp.pos, outer, 0.0, TAU, 40, Color(color, 0.22 * flash), 1.5)
 	draw_circle(imp.pos, 3.0 + 2.0 * t, Color(color, 0.7 * flash))
+	# Death sense (artillery): an exact time-to-impact sweep.
+	if death_sense.has("artillery"):
+		draw_arc(
+			imp.pos, imp.radius * 0.6, -PI / 2.0, -PI / 2.0 + TAU * t, 32,
+			Color(COLOR_TELEGRAPH_HOT, 0.55 * flash), 2.0)
 
 
 ## A dead block's remains: dim scattered slabs in a faint patch. Reads as
@@ -283,6 +292,17 @@ func _draw_enemies(state: SimStateScript) -> void:
 	for e: SimStateScript.Enemy in state.enemies:
 		if e.phase == SimCoreScript.PHASE_WINDUP:
 			_draw_telegraph(e)
+		elif e.phase == SimCoreScript.PHASE_ROAM and e.fire_cooldown > 0 \
+				and death_sense.has(e.type):
+			# Death sense: you know this one's rhythm — its recharge is
+			# visible while it roams.
+			var stats: Dictionary = core.enemy_types[e.type]
+			var frac := 1.0 - float(e.fire_cooldown) / maxf(
+				float(stats["fire_cooldown_ticks"]), 1.0)
+			var r: float = float(stats["radius"]) + 6.0
+			draw_arc(
+				e.pos, r, -PI / 2.0, -PI / 2.0 + TAU * frac, 24,
+				Color(COLOR_TELEGRAPH, 0.35), 1.5)
 
 	for e: SimStateScript.Enemy in state.enemies:
 		var stats: Dictionary = core.enemy_types[e.type]
@@ -329,6 +349,9 @@ func _draw_telegraph(e: SimStateScript.Enemy) -> void:
 	var windup := maxf(float(stats["windup_ticks"]), 1.0)
 	var t := 1.0 - float(e.phase_ticks) / windup
 	var flash := 0.7 + 0.3 * sin(_time * 22.0)
+	# Death sense: sources that have killed you telegraph louder, forever.
+	if death_sense.has(e.type):
+		flash *= 1.45
 	var color := COLOR_TELEGRAPH.lerp(COLOR_TELEGRAPH_HOT, t * t)
 	var radius: float = stats["radius"]
 
