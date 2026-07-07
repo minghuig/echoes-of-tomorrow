@@ -69,6 +69,10 @@ var ghost_active: bool = false
 ## Held-breath meter (0..1) and whether the slow is currently held.
 var focus_fraction: float = 1.0
 var focus_active: bool = false
+## Mine dispenser HUD state and freshly recovered schematics (death panel).
+var mine_stock: int = 0
+var mines_unlocked: bool = false
+var fresh_schematics: Array = []
 ## Which button hints to draw: pushed in by main.gd from the last raw input
 ## device seen (joypad vs. key/mouse). Touch takes priority over both (see
 ## `touch`) since it has its own dedicated chrome.
@@ -240,6 +244,16 @@ func _draw_hud(screen: Vector2) -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
 		Color(COLOR_AIM, 0.8) if focus_active else dim)
 
+	# Mine pips (only once the dispenser schematic is owned).
+	if mines_unlocked:
+		var key_hint := "[LB]" if using_gamepad else "[F]"
+		draw_string(
+			font, Vector2(24.0, 100.0), "%s CHARGES" % key_hint,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, dim)
+		for i in mine_stock:
+			draw_circle(
+				Vector2(110.0 + i * 14.0, 96.0), 4.0, Color(COLOR_DOWN_TEXT, 0.85))
+
 	# Run stats, top-right.
 	var right := screen.x - 24.0
 	draw_string(
@@ -317,7 +331,10 @@ func _draw_death_panel(state: SimStateScript) -> void:
 	if not fresh_intel.is_empty():
 		_draw_centered(
 			font, "%d NEW INTEL DECRYPTED" % fresh_intel.size(), 428.0, 22, COLOR_FRAG)
-	_draw_centered(font, _confirm_hint("ENTER THE BETWEEN"), 480.0, 26, COLOR_AIM)
+	if not fresh_schematics.is_empty():
+		_draw_centered(
+			font, "SCHEMATIC RECOVERED — GEAR UNLOCKED", 454.0, 22, COLOR_CLEAR)
+	_draw_centered(font, _confirm_hint("ENTER THE BETWEEN"), 490.0, 26, COLOR_AIM)
 
 
 ## Frozen (mid-wave or mid-Between): dim the last live frame and show a single

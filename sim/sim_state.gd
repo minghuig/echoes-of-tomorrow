@@ -61,6 +61,26 @@ class Crater extends RefCounted:
 	var pos: Vector2 = Vector2.ZERO
 	var radius: float = 0.0
 
+## A lootable crate on the map: crack it (player fire) for salvage. kind is
+## "supply" or "schematic" (the deep cache that unlocks gear permanently).
+class Cache extends RefCounted:
+	var pos: Vector2 = Vector2.ZERO  # top-left corner
+	var size: Vector2 = Vector2.ZERO
+	var hp: int = 0
+	var kind: String = ""
+
+## A dropped salvage item, collected by walking over it before it expires.
+class Pickup extends RefCounted:
+	var pos: Vector2 = Vector2.ZERO
+	var kind: String = ""
+	var ttl: int = 0
+
+## A planted proximity mine: arms after arm_ticks, then detonates on the
+## first enemy inside the trigger radius.
+class Mine extends RefCounted:
+	var pos: Vector2 = Vector2.ZERO
+	var arm_ticks: int = 0
+
 var tick: int = 0
 
 var player_pos: Vector2 = Vector2.ZERO
@@ -91,6 +111,17 @@ var pending_spawns: Array[PendingSpawn] = []
 var pending_impacts: Array[Impact] = []
 var craters: Array[Crater] = []
 var rubble: Array[Rubble] = []
+var caches: Array[Cache] = []
+var pickups: Array[Pickup] = []
+var mines: Array[Mine] = []
+
+## Mine dispenser state (stock comes from the loadout; pickups restock it).
+var mine_stock: int = 0
+var mine_cooldown: int = 0
+## Overcharge salvage stacks: each one scales the fire cooldown down.
+var overcharge_stacks: int = 0
+## Schematic ids recovered this run (banked by the meta layer at run end).
+var schematics_found: Array[String] = []
 
 var arena_size: Vector2 = Vector2.ZERO
 ## Per-seed tide: everything above this y is surf and slows ground movers.
@@ -157,6 +188,27 @@ func serialize() -> PackedByteArray:
 	for r: Rubble in rubble:
 		_put_vec2(buf, r.pos)
 		_put_vec2(buf, r.size)
+	buf.put_u32(caches.size())
+	for c: Cache in caches:
+		_put_vec2(buf, c.pos)
+		_put_vec2(buf, c.size)
+		buf.put_32(c.hp)
+		buf.put_utf8_string(c.kind)
+	buf.put_u32(pickups.size())
+	for p: Pickup in pickups:
+		_put_vec2(buf, p.pos)
+		buf.put_utf8_string(p.kind)
+		buf.put_32(p.ttl)
+	buf.put_u32(mines.size())
+	for m: Mine in mines:
+		_put_vec2(buf, m.pos)
+		buf.put_32(m.arm_ticks)
+	buf.put_32(mine_stock)
+	buf.put_32(mine_cooldown)
+	buf.put_32(overcharge_stacks)
+	buf.put_u32(schematics_found.size())
+	for s: String in schematics_found:
+		buf.put_utf8_string(s)
 	_put_vec2(buf, arena_size)
 	buf.put_float(surf_line)
 	return buf.data_array

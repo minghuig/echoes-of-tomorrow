@@ -31,6 +31,17 @@
 	"rubble": {
 		"slow": 0.75
 	},
+	"mine": {
+		"radius": 8.0,
+		"trigger_radius": 42.0,
+		"blast_radius": 72.0,
+		"damage": 30,
+		"self_damage": 15,
+		"arm_ticks": 40,
+		"stock": 3,
+		"stock_max": 6,
+		"place_cooldown_ticks": 30
+	},
 	"meta": {
 		"win_fragment_target": 200
 	}

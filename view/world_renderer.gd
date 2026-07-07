@@ -26,6 +26,10 @@ const COLOR_CRACK := Color("0e0c18")
 const COLOR_DRONE := Color("ff8c5a")
 const COLOR_INFANTRY := Color("e05e51")
 const COLOR_HEAVY := Color("ff7a4f")
+const COLOR_CACHE := Color("ffd75e")
+const COLOR_SCHEMATIC := Color("6ff2f6")
+const COLOR_REPAIR := Color("6ee08a")
+const COLOR_MINE := Color("ff5d4f")
 const COLOR_GHOST := Color(0.247, 0.816, 0.831, 0.35)
 const COLOR_GHOST_PROJ := Color(0.247, 0.816, 0.831, 0.22)
 ## Windup warnings: danger red that heats toward white as the attack commits.
@@ -61,6 +65,13 @@ func _draw() -> void:
 
 	for b: SimStateScript.Block in state.blocks:
 		_draw_block(b)
+
+	for c: SimStateScript.Cache in state.caches:
+		_draw_cache(c)
+	for m: SimStateScript.Mine in state.mines:
+		_draw_mine(m)
+	for p: SimStateScript.Pickup in state.pickups:
+		_draw_pickup(p)
 
 	for imp: SimStateScript.Impact in state.pending_impacts:
 		_draw_impact_warning(imp, state.tick)
@@ -122,6 +133,58 @@ func _draw_rubble(r: SimStateScript.Rubble) -> void:
 		draw_set_transform(p, rng.randf_range(-0.6, 0.6), Vector2.ONE)
 		draw_rect(Rect2(-half, half * 2.0), Color(COLOR_BLOCK_EDGE, 0.22))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## A lootable crate: braced box with a pulsing lock light. Schematic caches
+## glow cyan and read as the thing worth crossing the map for.
+func _draw_cache(c: SimStateScript.Cache) -> void:
+	var rect := Rect2(c.pos, c.size)
+	var color := COLOR_SCHEMATIC if c.kind == "schematic" else COLOR_CACHE
+	var pulse := 0.6 + 0.4 * sin(_time * 3.2 + c.pos.x)
+	draw_rect(rect.grow(6.0), Color(color, 0.05 * pulse))
+	draw_rect(rect.grow(2.0), Color(color, 0.10 * pulse))
+	draw_rect(rect, Color(COLOR_BLOCK_FILL, 0.9))
+	draw_rect(rect, Color(color, 0.85), false, 2.0)
+	_draw_block_corners(rect.grow(2.0), Color(color, 0.9 * pulse))
+	draw_circle(rect.get_center(), 4.0, Color(color, 0.4 + 0.5 * pulse))
+	# Damage state: lock dims as it cracks.
+	if c.kind == "schematic":
+		# A small orbiting spark marks it as singular.
+		var orbit := rect.get_center() + Vector2.from_angle(_time * 2.0) * (rect.size.x * 0.75)
+		draw_circle(orbit, 2.5, Color(color, 0.8))
+
+
+## Salvage on the ground: bobbing diamond, colored by what it does.
+func _draw_pickup(p: SimStateScript.Pickup) -> void:
+	var bob := sin(_time * 4.0 + p.pos.x * 0.1) * 3.0
+	var pos := p.pos + Vector2(0.0, bob)
+	var color := COLOR_REPAIR
+	if p.kind == "overcharge":
+		color = COLOR_PROJ
+	elif p.kind == "mine_restock":
+		color = COLOR_MINE
+	# Expiring salvage flickers.
+	var alpha := 0.95
+	if p.ttl < 240:
+		alpha = 0.4 + 0.5 * sin(_time * 12.0)
+	var pts := PackedVector2Array([
+		pos + Vector2(0.0, -8.0), pos + Vector2(7.0, 0.0),
+		pos + Vector2(0.0, 8.0), pos + Vector2(-7.0, 0.0)])
+	draw_circle(pos, 13.0, Color(color, 0.08))
+	draw_colored_polygon(pts, Color(color, alpha * 0.85))
+	draw_polyline(pts + PackedVector2Array([pts[0]]), Color(color, alpha), 1.5)
+
+
+## A planted mine: dark disc; the core blinks red once armed, and a faint
+## ring shows the trigger reach so placement is a readable plan.
+func _draw_mine(m: SimStateScript.Mine) -> void:
+	var armed := m.arm_ticks <= 0
+	var blink := 0.5 + 0.5 * sin(_time * (10.0 if armed else 3.0))
+	draw_circle(m.pos, 8.0, Color(COLOR_BG, 0.9))
+	draw_arc(m.pos, 8.0, 0.0, TAU, 20, Color(COLOR_MINE, 0.8), 1.5)
+	draw_circle(m.pos, 3.0, Color(COLOR_MINE, (0.9 if armed else 0.4) * blink))
+	if armed:
+		draw_arc(m.pos, 42.0, 0.0, TAU, 32, Color(COLOR_MINE, 0.12), 1.0)
 
 
 func _draw_block(b: SimStateScript.Block) -> void:
