@@ -141,7 +141,10 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if core == null:
 		return
-	var screen: Vector2 = core.state.arena_size
+	# The overlay is screen-space chrome on its own CanvasLayer; the arena is
+	# larger than the screen now that the camera scrolls, so everything here
+	# lays out against the viewport, never the arena.
+	var screen: Vector2 = get_viewport_rect().size
 
 	if mode == MODE_CREDITS:
 		_draw_credits(screen)
@@ -267,7 +270,7 @@ func _draw_touch_overlay(state: SimStateScript) -> void:
 			touch.stick_anchor + touch.stick_vector * TouchInputScript.STICK_RADIUS,
 			TouchInputScript.KNOB_RADIUS, Color(1, 1, 1, 0.28))
 	else:
-		var rest := Vector2(150.0, state.arena_size.y - 150.0)
+		var rest := Vector2(150.0, get_viewport_rect().size.y - 150.0)
 		draw_arc(rest, TouchInputScript.STICK_RADIUS, 0.0, TAU, 32, Color(1, 1, 1, 0.1), 2.0)
 
 	if touch.aim_active():
@@ -297,7 +300,7 @@ func _draw_wave_banner(screen: Vector2) -> void:
 
 
 func _draw_death_panel(state: SimStateScript) -> void:
-	var screen := state.arena_size
+	var screen := get_viewport_rect().size
 	var flicker := 0.9 + 0.1 * sin(_time * 33.0) * sin(_time * 11.0)
 	draw_rect(Rect2(Vector2.ZERO, screen), Color(0.0, 0.0, 0.0, 0.55), true)
 
@@ -567,7 +570,7 @@ func _draw_centered(
 ) -> void:
 	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size).x
 	draw_string(
-		font, Vector2((core.state.arena_size.x - width) * 0.5, y), text,
+		font, Vector2((get_viewport_rect().size.x - width) * 0.5, y), text,
 		HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, color)
 
 

@@ -131,16 +131,19 @@ func _drive_input() -> void:
 	else:
 		Input.action_release("focus")
 
-	# Aim at the nearest enemy via mouse warp (window == viewport, so world
-	# coordinates are window coordinates).
-	var best := Vector2(640.0, 120.0)
+	# Aim at the nearest enemy via mouse warp. World -> screen through the
+	# canvas transform (the camera scrolls now), clamped into the window.
+	var best: Vector2 = state.player_pos + Vector2(0.0, -200.0)
 	var best_d := INF
 	for e: Variant in state.enemies:
 		var d: float = e.pos.distance_squared_to(state.player_pos)
 		if d < best_d:
 			best_d = d
 			best = e.pos
-	Input.warp_mouse(best)
+	var screen: Vector2 = _main.get_viewport().get_canvas_transform() * best
+	screen.x = clampf(screen.x, 8.0, 1272.0)
+	screen.y = clampf(screen.y, 8.0, 712.0)
+	Input.warp_mouse(screen)
 
 
 func _release_all() -> void:

@@ -47,9 +47,6 @@ const GAMEPAD_DETECT_DEADZONE: float = 0.5
 ## can't also dismiss the credits.
 const CREDITS_MIN_TICKS: int = 60
 
-## The sea band enemies wade out of, in pixels from the top edge.
-const SEA_DEPTH: float = 110.0
-
 ## Tap targets for the Between on touch devices (replace the key hints).
 const BETWEEN_BTN_TOGGLE := Rect2(320.0, 636.0, 280.0, 56.0)
 const BETWEEN_BTN_DEPLOY := Rect2(680.0, 636.0, 280.0, 56.0)
@@ -191,7 +188,11 @@ var _touch := TouchInputScript.new()
 @onready var _background: BackgroundScript = $Background
 @onready var _world: WorldScript = $World
 @onready var _fx: FxScript = $Effects
+@onready var _camera: Camera2D = $Camera
 @onready var _overlay: OverlayScript = $OverlayLayer/Overlay
+
+## How far the camera leads toward the aim direction.
+const CAMERA_LOOKAHEAD: float = 90.0
 
 
 func _ready() -> void:
@@ -228,9 +229,10 @@ func _ready() -> void:
 	_overlay.win_fragment_target = _win_fragment_target
 
 	_start_run()
-	_touch.setup(_core.state.arena_size)
+	# Touch chrome is screen-space (the viewport), not world-space — the
+	# arena is bigger than the screen now that the camera scrolls.
+	_touch.setup(get_viewport().get_visible_rect().size)
 	_background.arena_size = _core.state.arena_size
-	_background.sea_depth = SEA_DEPTH
 	_present()
 
 
@@ -380,6 +382,19 @@ func _present() -> void:
 	_world.position = _shake_offset
 	_fx.position = _shake_offset
 	_world.recoil = _recoil
+	_update_camera()
+
+
+## Follow the player with a little lead toward the aim, clamped so the view
+## never leaves the arena. Smoothing is on the Camera2D node itself.
+func _update_camera() -> void:
+	var half := get_viewport().get_visible_rect().size * 0.5
+	var arena: Vector2 = _core.state.arena_size
+	var target: Vector2 = _core.state.player_pos \
+		+ _core.state.player_aim * CAMERA_LOOKAHEAD
+	_camera.position = Vector2(
+		clampf(target.x, half.x, arena.x - half.x),
+		clampf(target.y, half.y, arena.y - half.y))
 
 	_overlay.mode = _mode
 	_overlay.between_selection = _between_selection
@@ -551,7 +566,8 @@ func _handle_between_taps() -> void:
 				_intel_selection = row
 		else:
 			var panel_w := 288.0
-			var gap := (_core.state.arena_size.x - panel_w * _tree.size()) / (_tree.size() + 1)
+			var screen_w := get_viewport().get_visible_rect().size.x
+			var gap := (screen_w - panel_w * _tree.size()) / (_tree.size() + 1)
 			for i in _tree.size():
 				if Rect2(gap + i * (panel_w + gap), 190.0, panel_w, 420.0).has_point(tap):
 					if i == _between_selection:
@@ -672,6 +688,11 @@ func _start_run() -> void:
 	_core.setup(_run_seed, _run_loadout)
 	_world.core = _core
 	_overlay.core = _core
+	# The tide is per-seed sim state; the backdrop paints to it.
+	_background.sea_depth = _core.state.surf_line
+	if _camera != null:
+		_update_camera()
+		_camera.reset_smoothing()
 	_spawn_ghost()
 
 
@@ -969,7 +990,10 @@ func _build_command() -> SimCommand:
 		if _touch.stick_active():
 			cmd.move = _touch.stick_vector
 		if _touch.aim_active():
-			cmd.aim = _touch.aim_point - _core.state.player_pos
+			# Touch positions are screen-space; the camera means screen is
+			# no longer world, so run the aim point through the canvas
+			# transform before comparing to the player's world position.
+			cmd.aim = _screen_to_world(_touch.aim_point) - _core.state.player_pos
 			cmd.fire = true
 		else:
 			var stick := Vector2(
@@ -982,6 +1006,10 @@ func _build_command() -> SimCommand:
 		if _touch.consume_dodge():
 			cmd.dodge = true
 	return cmd
+
+
+func _screen_to_world(point: Vector2) -> Vector2:
+	return get_viewport().get_canvas_transform().affine_inverse() * point
 
 
 func _read_aim() -> Vector2:
