@@ -128,6 +128,10 @@ var _credits_ticks: int = 0
 ## button hints to draw), never read by the sim.
 var _using_gamepad: bool = false
 var _win_fragment_target: int = 0
+## Mines a run starts with once the dispenser schematic is owned (tuning).
+var _mine_base_stock: int = 0
+## Schematic ids recovered by the most recent banked run (death panel line).
+var _fresh_schematics: Array = []
 
 # The sentience tree (content/sentience_tree.json) and Between UI state.
 var _tree: Array = []
@@ -356,6 +360,9 @@ func _physics_process(_delta: float) -> void:
 		_proj_prev[p.get_instance_id()] = p.pos
 
 	var pre_impacts: Array[SimStateScript.Impact] = state.pending_impacts.duplicate()
+	var pre_caches: Array[SimStateScript.Cache] = state.caches.duplicate()
+	var pre_pickups: Array[SimStateScript.Pickup] = state.pickups.duplicate()
+	var pre_mines: Array[SimStateScript.Mine] = state.mines.duplicate()
 
 	var cmd := _build_command()
 	_command_log.append(cmd)
@@ -363,6 +370,7 @@ func _physics_process(_delta: float) -> void:
 	_step_ghost()
 
 	_emit_impact_events(state, pre_impacts)
+	_emit_fixture_events(state, pre_caches, pre_pickups, pre_mines)
 
 	_emit_feel_events(
 		cmd.fire and pre_fire_cooldown == 0, pre_blocks, pre_enemies, pre_hp, pre_wave)
@@ -409,6 +417,9 @@ func _update_camera() -> void:
 	_overlay.using_gamepad = _using_gamepad
 	_overlay.focus_fraction = _focus_meter / FOCUS_MAX
 	_overlay.focus_active = _focus_active
+	_overlay.mine_stock = _core.state.mine_stock
+	_overlay.mines_unlocked = _meta.schematics.has("mine_dispenser")
+	_overlay.fresh_schematics = _fresh_schematics
 	_overlay.display_label = _display.label()
 	_overlay.mode_before_pause = _mode_before_pause
 	_overlay.slot_summaries = _slot_summaries()
@@ -590,6 +601,10 @@ func _bank_run_results() -> void:
 	_meta.best_wave = maxi(_meta.best_wave, s.wave_index)
 	if s.player_down:
 		_meta.deaths += 1
+	for schematic: String in s.schematics_found:
+		if not _meta.schematics.has(schematic):
+			_meta.schematics.append(schematic)
+			_fresh_schematics.append(schematic)
 	var fresh: Array = _meta.evaluate_intel(_intel)
 	if not fresh.is_empty():
 		_fresh_intel = fresh
@@ -648,6 +663,9 @@ func _resolve_loadout() -> Dictionary:
 		var effects: Dictionary = branch["tiers"][owned - 1]["effects"]
 		for key in effects:
 			loadout[key] = effects[key]
+	# Schematic gear: owning the dispenser blueprint stocks the run's mines.
+	if _meta.schematics.has("mine_dispenser"):
+		loadout["mine_stock"] = _mine_base_stock
 	return loadout
 
 
@@ -656,6 +674,7 @@ func _resolve_loadout() -> Dictionary:
 func _load_win_target() -> int:
 	var tuning: Dictionary = JSON.parse_string(
 		FileAccess.get_file_as_string("res://content/tuning.json"))
+	_mine_base_stock = int(tuning.get("mine", {}).get("stock", 0))
 	return int(tuning["meta"]["win_fragment_target"])
 
 
@@ -679,6 +698,7 @@ func _start_run() -> void:
 	_hitch_cooldown = 0
 	_run_banked = false
 	_fresh_intel = []
+	_fresh_schematics = []
 	_proj_prev.clear()
 	_proj_trails.clear()
 	if _fx != null:
@@ -867,6 +887,46 @@ func _emit_impact_events(
 		_sfx_break.play()
 
 
+## Fixture/loot deltas -> juice: cracked caches shatter, collected salvage
+## chimes, detonated mines explode.
+func _emit_fixture_events(
+	state: SimStateScript,
+	pre_caches: Array[SimStateScript.Cache],
+	pre_pickups: Array[SimStateScript.Pickup],
+	pre_mines: Array[SimStateScript.Mine],
+) -> void:
+	var still_caches := {}
+	for c: SimStateScript.Cache in state.caches:
+		still_caches[c] = true
+	for c: SimStateScript.Cache in pre_caches:
+		if not still_caches.has(c):
+			_fx.block_destroyed(Rect2(c.pos, c.size))
+			_shake = maxf(_shake, SHAKE_DESTROY)
+			_sfx_break.play()
+
+	var still_pickups := {}
+	for p: SimStateScript.Pickup in state.pickups:
+		still_pickups[p] = true
+	for p: SimStateScript.Pickup in pre_pickups:
+		if still_pickups.has(p):
+			continue
+		# Removed pickup: collected if it still had life left (expiry fizzles).
+		if p.ttl > 1:
+			_fx.ring(p.pos, Color("6ee08a"), 4.0, 30.0, 0.25, 3.0)
+			_sfx_buy.play()
+		else:
+			_fx.fizzle(p.pos)
+
+	var still_mines := {}
+	for m: SimStateScript.Mine in state.mines:
+		still_mines[m] = true
+	for m: SimStateScript.Mine in pre_mines:
+		if not still_mines.has(m):
+			_fx.explosion(m.pos, 72.0)
+			_shake = maxf(_shake, SHAKE_DESTROY)
+			_sfx_break.play()
+
+
 ## Diff the projectile set to spawn muzzle flashes (on new bolts), recoil, and
 ## impact sparks + trail ghosts (on removed bolts).
 func _diff_projectiles(
@@ -982,6 +1042,7 @@ func _build_command() -> SimCommand:
 	cmd.aim = _read_aim()
 	cmd.fire = Input.is_action_pressed("fire")
 	cmd.dodge = Input.is_action_just_pressed("dodge")
+	cmd.place_mine = Input.is_action_just_pressed("mine")
 
 	# On touch devices the browser emulates a mouse from touches, which
 	# would fight the virtual stick — so touch replaces pointer input

@@ -50,8 +50,30 @@ func _exit_tree() -> void:
 	_restore_saves()
 
 
+## Give the probe session every schematic so gear verbs (mines) are visible
+## in screenshots. Runs after the snapshot; the restore undoes it.
+func _doctor_save() -> void:
+	var slot := 1
+	if FileAccess.file_exists("user://active_slot.json"):
+		var parsed: Variant = JSON.parse_string(
+			FileAccess.get_file_as_string("user://active_slot.json"))
+		if parsed is Dictionary:
+			slot = clampi(int(parsed.get("slot", 1)), 1, 3)
+	var path := "user://save_slot_%d.json" % slot
+	var save: Dictionary = {}
+	if FileAccess.file_exists(path):
+		var parsed_save: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if parsed_save is Dictionary:
+			save = parsed_save
+	save["schematics"] = ["mine_dispenser"]
+	var out := FileAccess.open(path, FileAccess.WRITE)
+	if out != null:
+		out.store_string(JSON.stringify(save))
+
+
 func _ready() -> void:
 	_snapshot_saves()
+	_doctor_save()
 	var args := OS.get_cmdline_user_args()
 	for i in args.size():
 		if args[i] == "--out" and i + 1 < args.size():
@@ -131,6 +153,12 @@ func _drive_input() -> void:
 	else:
 		Input.action_release("focus")
 
+	# Drop a mine now and then (needs the doctored schematic + stock).
+	if _frames % 300 == 0:
+		Input.action_press("mine")
+	else:
+		Input.action_release("mine")
+
 	# Aim at the nearest enemy via mouse warp. World -> screen through the
 	# canvas transform (the camera scrolls now), clamped into the window.
 	var best: Vector2 = state.player_pos + Vector2(0.0, -200.0)
@@ -148,7 +176,7 @@ func _drive_input() -> void:
 
 func _release_all() -> void:
 	for a: String in [
-		"fire", "dodge", "reset", "focus",
+		"fire", "dodge", "reset", "focus", "mine",
 		"move_left", "move_right", "move_up", "move_down",
 	]:
 		Input.action_release(a)

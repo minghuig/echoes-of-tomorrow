@@ -63,6 +63,7 @@ func _build_command_log() -> Array[SimCommand]:
 		cmd.aim = Vector2.RIGHT.rotated(float(i) * 0.031)
 		cmd.fire = (i % 20) < 12
 		cmd.dodge = (i % 96) == 90
+		cmd.place_mine = (i % 300) == 150
 		commands.append(cmd)
 	return commands
 
@@ -75,6 +76,7 @@ const LOADOUT := {
 	"dodge_cooldown_scale": 0.8,
 	"dodge_iframe_add": 4,
 	"kill_fragment_add": 1,
+	"mine_stock": 3,
 }
 
 

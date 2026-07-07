@@ -8,3 +8,5 @@ var move: Vector2 = Vector2.ZERO
 var aim: Vector2 = Vector2.ZERO
 var fire: bool = false
 var dodge: bool = false
+## Drop a proximity mine at the player's feet (needs stock; see mine tuning).
+var place_mine: bool = false

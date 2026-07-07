@@ -23,6 +23,8 @@ var lifetime_fragments: int = 0
 var best_wave: int = 0
 ## Ids of decrypted intel entries.
 var unlocked_intel: Array = []
+## Gear schematics recovered from deep caches — permanent loadout unlocks.
+var schematics: Array = []
 
 
 func upgrade_tier(branch_id: String) -> int:
@@ -90,6 +92,11 @@ func load_from_disk(path: String = SAVE_PATH) -> void:
 		if stored_intel is Array:
 			for id in stored_intel:
 				unlocked_intel.append(String(id))
+		var stored_schematics: Variant = parsed.get("schematics", [])
+		schematics = []
+		if stored_schematics is Array:
+			for id in stored_schematics:
+				schematics.append(String(id))
 
 
 func save_to_disk(path: String = SAVE_PATH) -> void:
@@ -107,4 +114,5 @@ func save_to_disk(path: String = SAVE_PATH) -> void:
 		"lifetime_fragments": lifetime_fragments,
 		"best_wave": best_wave,
 		"unlocked_intel": unlocked_intel,
+		"schematics": schematics,
 	}))

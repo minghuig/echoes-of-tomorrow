@@ -23,6 +23,7 @@ const TUNING_PATH := "res://content/tuning.json"
 const LAYOUT_PATH := "res://content/block_layout.json"
 const ENEMIES_PATH := "res://content/enemies.json"
 const WAVES_PATH := "res://content/waves.json"
+const FIXTURES_PATH := "res://content/fixtures.json"
 
 var state: State
 var rng: RandomNumberGenerator
@@ -66,6 +67,14 @@ var _max_craters: int
 # patches (dead blocks) slow them anywhere.
 var _surf_slow: float
 var _rubble_slow: float
+
+# Fixtures & loot (content/fixtures.json) and mine tuning (tuning.json).
+var _supply_cfg: Dictionary
+var _schematic_cfg: Dictionary
+var _salvage: Dictionary
+var _mine: Dictionary
+## Whether this loadout can hold mines at all (drop tables adapt).
+var _mines_enabled: bool = false
 
 # From the loadout: extra fragments stripped per kill (Exfiltration branch).
 var _kill_fragment_add: int = 0
@@ -143,6 +152,16 @@ func setup(seed_value: int, loadout: Dictionary = {}) -> void:
 		b.hp = b.max_hp
 		state.blocks.append(b)
 
+	_mine = tuning.get("mine", {})
+	state.mine_stock = int(loadout.get("mine_stock", 0))
+	_mines_enabled = state.mine_stock > 0
+
+	var fixtures: Dictionary = _load_json(FIXTURES_PATH)
+	_supply_cfg = fixtures["supply_cache"]
+	_schematic_cfg = fixtures["schematic_cache"]
+	_salvage = fixtures["salvage"]
+	_place_caches()
+
 
 ## Advance the simulation by exactly one tick. Once the player is down the
 ## world freezes; only the tick counter advances.
@@ -156,6 +175,8 @@ func step(cmd: SimCommand) -> void:
 		_step_enemies()
 		_step_enemy_projectiles()
 		_step_impacts()
+		_step_mines()
+		_step_pickups()
 		_cull_dead_enemies()
 	state.tick += 1
 
@@ -198,7 +219,25 @@ func _step_player(cmd: SimCommand) -> void:
 		p.ttl = _proj_ttl_ticks
 		p.damage = _proj_damage
 		state.projectiles.append(p)
-		state.fire_cooldown = _fire_cooldown_ticks
+		state.fire_cooldown = _current_fire_cooldown()
+
+	if state.mine_cooldown > 0:
+		state.mine_cooldown -= 1
+	if cmd.place_mine and state.mine_stock > 0 and state.mine_cooldown == 0:
+		var m := State.Mine.new()
+		m.pos = state.player_pos
+		m.arm_ticks = int(_mine["arm_ticks"])
+		state.mines.append(m)
+		state.mine_stock -= 1
+		state.mine_cooldown = int(_mine["place_cooldown_ticks"])
+
+
+## Fire cooldown after overcharge salvage: each stack scales it down.
+func _current_fire_cooldown() -> int:
+	var cd := float(_fire_cooldown_ticks)
+	for i in state.overcharge_stacks:
+		cd *= float(_salvage["overcharge_scale"])
+	return maxi(1, roundi(cd))
 
 
 func _step_projectiles() -> void:
@@ -221,10 +260,17 @@ func _step_projectiles() -> void:
 					hit = true
 					break
 		if not hit:
+			for c: State.Cache in state.caches:
+				if _circle_hits_aabb(p.pos, projectile_radius, c.pos, c.size):
+					c.hp -= 1
+					hit = true
+					break
+		if not hit:
 			survivors.append(p)
 	state.projectiles = survivors
 
 	_settle_blocks()
+	_settle_caches()
 
 
 ## Queue the next wave onto the spawn list when its start tick arrives.
@@ -353,6 +399,126 @@ func _step_impacts() -> void:
 	state.pending_impacts = remaining
 	if hit_blocks:
 		_settle_blocks()
+
+
+## Seed the map's lootables: a few supply caches on per-seed sites drawn
+## without replacement, plus the one deep schematic cache — reaching it is
+## the acquisition (location knowledge as loot).
+func _place_caches() -> void:
+	var sites: Array = (_supply_cfg["sites"] as Array).duplicate()
+	for i in int(_supply_cfg["count_per_run"]):
+		if sites.is_empty():
+			break
+		var site: Dictionary = sites.pop_at(rng.randi_range(0, sites.size() - 1))
+		var c := State.Cache.new()
+		c.pos = Vector2(site["x"], site["y"])
+		c.size = Vector2(_supply_cfg["w"], _supply_cfg["h"])
+		c.hp = int(_supply_cfg["hp"])
+		c.kind = "supply"
+		state.caches.append(c)
+
+	var sch := State.Cache.new()
+	sch.pos = Vector2(_schematic_cfg["x"], _schematic_cfg["y"])
+	sch.size = Vector2(_schematic_cfg["w"], _schematic_cfg["h"])
+	sch.hp = int(_schematic_cfg["hp"])
+	sch.kind = "schematic"
+	state.caches.append(sch)
+
+
+## Sweep cracked caches: supply crates scatter salvage, the schematic cache
+## records its find (banked into permanent unlocks by the meta layer).
+func _settle_caches() -> void:
+	var standing: Array[State.Cache] = []
+	for c: State.Cache in state.caches:
+		if c.hp > 0:
+			standing.append(c)
+			continue
+		var center := c.pos + c.size * 0.5
+		if c.kind == "schematic":
+			state.schematics_found.append(String(_schematic_cfg["schematic"]))
+			state.fragments += int(_schematic_cfg["fragments"])
+			_drop_pickup(center, "repair")
+		else:
+			state.fragments += int(_supply_cfg["fragments"])
+			for i in int(_salvage["drops_per_cache"]):
+				_drop_pickup(
+					center + Vector2(
+						rng.randf_range(-22.0, 22.0), rng.randf_range(-18.0, 18.0)),
+					_pick_drop_kind())
+	state.caches = standing
+
+
+func _drop_pickup(pos: Vector2, kind: String) -> void:
+	var p := State.Pickup.new()
+	p.pos = pos
+	p.kind = kind
+	p.ttl = int(_salvage["ttl_ticks"])
+	state.pickups.append(p)
+
+
+## Random salvage kind; mine restocks only roll for loadouts that can hold
+## mines, otherwise they degrade to repairs.
+func _pick_drop_kind() -> String:
+	var kinds: Array = _salvage["kinds"]
+	var kind := String(kinds[rng.randi_range(0, kinds.size() - 1)])
+	if kind == "mine_restock" and not _mines_enabled:
+		return "repair"
+	return kind
+
+
+## Armed mines detonate on the first enemy in trigger range: AoE to enemies,
+## reduced self-damage if the player is standing in their own blast.
+func _step_mines() -> void:
+	if state.mines.is_empty():
+		return
+	var remaining: Array[State.Mine] = []
+	for m: State.Mine in state.mines:
+		if m.arm_ticks > 0:
+			m.arm_ticks -= 1
+			remaining.append(m)
+			continue
+		var triggered := false
+		var trigger := float(_mine["trigger_radius"])
+		for e: State.Enemy in state.enemies:
+			if e.hp > 0 and _circles_hit(m.pos, trigger, e.pos, _stat_f(e.type, "radius")):
+				triggered = true
+				break
+		if not triggered:
+			remaining.append(m)
+			continue
+		var blast := float(_mine["blast_radius"])
+		for e: State.Enemy in state.enemies:
+			if e.hp > 0 and _circles_hit(m.pos, blast, e.pos, _stat_f(e.type, "radius")):
+				e.hp -= int(_mine["damage"])
+		if _circles_hit(m.pos, blast, state.player_pos, player_radius):
+			_damage_player(int(_mine["self_damage"]))
+	state.mines = remaining
+
+
+## Salvage decays if ignored and applies on contact.
+func _step_pickups() -> void:
+	if state.pickups.is_empty():
+		return
+	var remaining: Array[State.Pickup] = []
+	var radius := float(_salvage["pickup_radius"])
+	for p: State.Pickup in state.pickups:
+		p.ttl -= 1
+		if p.ttl <= 0:
+			continue
+		if _circles_hit(p.pos, radius, state.player_pos, player_radius):
+			match p.kind:
+				"repair":
+					state.player_hp = mini(
+						player_max_hp, state.player_hp + int(_salvage["repair_hp"]))
+				"overcharge":
+					state.overcharge_stacks += 1
+				"mine_restock":
+					state.mine_stock = mini(
+						int(_mine["stock_max"]),
+						state.mine_stock + int(_salvage["mine_restock"]))
+			continue
+		remaining.append(p)
+	state.pickups = remaining
 
 
 ## Movement multiplier for ground movers: surf above the tide line, crater
@@ -613,6 +779,9 @@ func _cull_dead_enemies() -> void:
 		else:
 			state.kills += 1
 			state.fragments += _stat_i(e.type, "fragments") + _kill_fragment_add
+			# Elites can drop salvage where they fall.
+			if e.type == "heavy" and rng.randf() < float(_salvage["heavy_drop_chance"]):
+				_drop_pickup(e.pos, _pick_drop_kind())
 	state.enemies = alive
 
 
