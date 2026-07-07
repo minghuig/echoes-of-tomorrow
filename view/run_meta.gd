@@ -25,6 +25,9 @@ var best_wave: int = 0
 var unlocked_intel: Array = []
 ## Gear schematics recovered from deep caches — permanent loadout unlocks.
 var schematics: Array = []
+## What has killed us, ever: damage source -> death count. Death sense —
+## telegraphs of things that killed you render louder forever.
+var killed_by: Dictionary = {}
 
 
 func upgrade_tier(branch_id: String) -> int:
@@ -97,6 +100,11 @@ func load_from_disk(path: String = SAVE_PATH) -> void:
 		if stored_schematics is Array:
 			for id in stored_schematics:
 				schematics.append(String(id))
+		var stored_killed: Variant = parsed.get("killed_by", {})
+		killed_by = {}
+		if stored_killed is Dictionary:
+			for key in stored_killed:
+				killed_by[String(key)] = int(stored_killed[key])
 
 
 func save_to_disk(path: String = SAVE_PATH) -> void:
@@ -115,4 +123,5 @@ func save_to_disk(path: String = SAVE_PATH) -> void:
 		"best_wave": best_wave,
 		"unlocked_intel": unlocked_intel,
 		"schematics": schematics,
+		"killed_by": killed_by,
 	}))

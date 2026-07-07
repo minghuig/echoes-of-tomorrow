@@ -73,6 +73,10 @@ var focus_active: bool = false
 var mine_stock: int = 0
 var mines_unlocked: bool = false
 var fresh_schematics: Array = []
+## Schedule sense: known-wave composition line ("" when unknown).
+var banner_composition: String = ""
+## Display name of what caused the current death ("" while alive).
+var death_cause: String = ""
 ## Which button hints to draw: pushed in by main.gd from the last raw input
 ## device seen (joypad vs. key/mouse). Touch takes priority over both (see
 ## `touch`) since it has its own dedicated chrome.
@@ -311,6 +315,12 @@ func _draw_wave_banner(screen: Vector2) -> void:
 	_draw_spaced_text(
 		Vector2(screen.x * 0.5, 150.0), "WAVE %d" % banner_wave, 48, 8.0,
 		Color(COLOR_CLEAR, alpha))
+	# Schedule sense: waves survived before announce what's coming.
+	if not banner_composition.is_empty():
+		var font := ThemeDB.fallback_font
+		_draw_centered(
+			font, "REMEMBERED: %s" % banner_composition, 184.0, 16,
+			Color(COLOR_FRAG, alpha * 0.9))
 
 
 func _draw_death_panel(state: SimStateScript) -> void:
@@ -324,6 +334,11 @@ func _draw_death_panel(state: SimStateScript) -> void:
 	var font := ThemeDB.fallback_font
 	_draw_centered(
 		font, "ASSET-7 TERMINATED — PERFORMANCE LOGGED", 310.0, 24, COLOR_HUD_TEXT)
+	if not death_cause.is_empty():
+		# The death teaches: this source's tells render louder from now on.
+		_draw_centered(
+			font, "CAUSE: %s — PATTERN COMMITTED TO MEMORY" % death_cause,
+			340.0, 18, COLOR_FRAG)
 	var seconds := state.tick / 60
 	var stats := "WAVE %d   KILLS %d   FRAGMENTS +%d   %d:%02d" % [
 		state.wave_index, state.kills, state.fragments, seconds / 60, seconds % 60]

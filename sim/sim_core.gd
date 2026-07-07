@@ -280,7 +280,7 @@ func _schedule_waves() -> void:
 	var start_tick := _first_wave_tick + state.wave_index * _wave_interval_ticks
 	if state.tick != start_tick:
 		return
-	var comp := _wave_composition(state.wave_index)
+	var comp := wave_composition(state.wave_index)
 	var slot := 0
 	for type: String in comp:
 		for i in int(comp[type]):
@@ -296,7 +296,9 @@ func _schedule_waves() -> void:
 
 
 ## Authored waves first; past the end, escalate the last wave linearly.
-func _wave_composition(index: int) -> Dictionary:
+## Public: the view reads it for schedule-sense banners (waves the player
+## has survived before announce their composition).
+func wave_composition(index: int) -> Dictionary:
 	if index < _waves.size():
 		return _waves[index]
 	var extra := index - _waves.size() + 1
@@ -389,7 +391,7 @@ func _step_impacts() -> void:
 			remaining.append(imp)
 			continue
 		if _circles_hit(imp.pos, imp.radius, state.player_pos, player_radius):
-			_damage_player(imp.damage)
+			_damage_player(imp.damage, "artillery")
 		for e: State.Enemy in state.enemies:
 			if e.hp > 0 and _circles_hit(imp.pos, imp.radius, e.pos, _stat_f(e.type, "radius")):
 				e.hp -= imp.damage
@@ -499,7 +501,7 @@ func _step_mines() -> void:
 			if e.hp > 0 and _circles_hit(m.pos, blast, e.pos, _stat_f(e.type, "radius")):
 				e.hp -= int(_mine["damage"])
 		if _circles_hit(m.pos, blast, state.player_pos, player_radius):
-			_damage_player(int(_mine["self_damage"]))
+			_damage_player(int(_mine["self_damage"]), "mine")
 	state.mines = remaining
 
 
@@ -594,7 +596,7 @@ func _step_enemies() -> void:
 			var contact := _stat_i(e.type, "contact_damage")
 			if e.phase == PHASE_COMMIT and _stat_s(e.type, "behavior") == "lancer":
 				contact = _stat_i(e.type, "charge_damage")
-			_damage_player(contact)
+			_damage_player(contact, e.type)
 			e.contact_cooldown = _stat_i(e.type, "contact_cooldown_ticks")
 
 
@@ -759,7 +761,7 @@ func _detonate_sapper(e: State.Enemy) -> void:
 		if _circle_hits_aabb(e.pos, blast, b.pos, b.size):
 			b.hp -= breach
 	if _circles_hit(e.pos, blast, state.player_pos, player_radius):
-		_damage_player(_stat_i(e.type, "player_damage"))
+		_damage_player(_stat_i(e.type, "player_damage"), e.type)
 	_settle_blocks()
 	e.hp = 0
 
@@ -790,7 +792,7 @@ func _fire_mortar(e: State.Enemy) -> void:
 func _resolve_slam(e: State.Enemy) -> void:
 	var slam_radius := _stat_f(e.type, "slam_radius")
 	if _circles_hit(e.pos, slam_radius, state.player_pos, player_radius):
-		_damage_player(_stat_i(e.type, "slam_damage"))
+		_damage_player(_stat_i(e.type, "slam_damage"), e.type)
 		var push := state.player_pos - e.pos
 		var push_dir := push.normalized() if push.length() > 0.001 else Vector2.DOWN
 		state.dodge_vel += push_dir * _stat_f(e.type, "slam_knockback")
@@ -845,7 +847,7 @@ func _step_enemy_projectiles() -> void:
 				hit = true
 				break
 		if not hit and _circles_hit(p.pos, projectile_radius, state.player_pos, player_radius):
-			_damage_player(p.damage)
+			_damage_player(p.damage, "infantry")
 			hit = true
 		if not hit:
 			survivors.append(p)
@@ -885,10 +887,14 @@ func _cull_dead_enemies() -> void:
 	state.enemies = alive
 
 
-func _damage_player(amount: int) -> void:
+## `source` names what hit the player (enemy type, "artillery", "mine") so
+## the meta layer can convert deaths into knowledge — the Edge-of-Tomorrow
+## contract: dying to a thing teaches you that thing.
+func _damage_player(amount: int, source: String) -> void:
 	if state.iframe_ticks > 0 or state.player_down:
 		return
 	state.player_hp -= amount
+	state.last_damage_source = source
 	if state.player_hp <= 0:
 		state.player_hp = 0
 		state.player_down = true
