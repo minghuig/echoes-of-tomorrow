@@ -64,6 +64,7 @@ func _build_command_log() -> Array[SimCommand]:
 		cmd.fire = (i % 20) < 12
 		cmd.dodge = (i % 96) == 90
 		cmd.place_mine = (i % 300) == 150
+		cmd.decoy = (i % 700) == 400
 		commands.append(cmd)
 	return commands
 
@@ -77,6 +78,7 @@ const LOADOUT := {
 	"dodge_iframe_add": 4,
 	"kill_fragment_add": 1,
 	"mine_stock": 3,
+	"decoy_unlock": 1,
 }
 
 

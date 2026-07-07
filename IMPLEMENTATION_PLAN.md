@@ -44,7 +44,7 @@ and knowledge (schedule/death sense from surviving/dying). Later milestones grow
 `WORLD_DESIGN.md`, `IMPLEMENTATION_PLAN.md`, cross-links. Merged first so the plan itself is
 in history.
 
-### ☐ B1 — Telegraph framework + enemy rework *(sim, content, view)*
+### ✅ B1 — Telegraph framework + enemy rework *(sim, content, view)*
 The keystone: enemies get a windup → committed → recover attack state machine, per-type data
 in `enemies.json`.
 - Drone: short orbit approach, then a telegraphed **dive** along a committed line (drawn
@@ -58,7 +58,7 @@ in `enemies.json`.
   established).
 **Accept:** every lethal enemy action is visible ≥ 0.4 s before it lands; determinism green.
 
-### ☐ B2 — Assault script: artillery events + flank entries + craters *(sim, content, view)*
+### ✅ B2 — Assault script: artillery events + flank entries + craters *(sim, content, view)*
 `waves.json` grows an `events` timeline alongside waves.
 - **Artillery barrage** events: impact circles telegraphed ~2 s, then AoE damage and a
   permanent-for-the-run **crater** (rough ground: slows all ground movers inside).
@@ -68,7 +68,7 @@ in `enemies.json`.
 **Accept:** wave 3+ has at least one barrage and one flank on the authored timeline; craters
 visibly reshape routes; determinism green.
 
-### ☐ B3 — The held breath: reflex slow + telegraph hitch *(view only)*
+### ✅ B3 — The held breath: reflex slow + telegraph hitch *(view only)*
 - Hold input (Shift / L2 / touch button) drains a meter and steps the sim at ¼ wall-clock
   rate; meter regenerates slowly while unused. Pure view-side pacing (pause/hit-stop
   precedent): command logs stay 1:1 with ticks, ghosts/replays untouched.
@@ -77,7 +77,7 @@ visibly reshape routes; determinism green.
 - HUD meter; strings via `strings.json`; pre-L3 name: **HELD BREATH**.
 **Accept:** slow-mo feels deliberate, meter economy forces choices, replay test still green.
 
-### ☐ B4 — The wider beach: camera + zone bands + rubble *(sim, content, view)*
+### ✅ B4 — The wider beach: camera + zone bands + rubble *(sim, content, view)*
 - Arena grows to ~2560×1080 (data change); view gains a follow camera with aim lookahead;
   overlay/touch untouched (already on `CanvasLayer`).
 - **Surf band** (top): all ground movement slowed; per-seed **tide level** sets its depth.
@@ -88,7 +88,7 @@ visibly reshape routes; determinism green.
 **Accept:** the map reads as sea → sand → seawall → flats → trench; camera clean at edges;
 determinism green.
 
-### ☐ B5 — Fixtures & loot: caches, salvage, the mine dispenser *(sim, content, view, meta)*
+### ✅ B5 — Fixtures & loot: caches, salvage, the mine dispenser *(sim, content, view, meta)*
 - **Supply caches** (per-seed placement from authored candidate sites): shoot the lock →
   salvage pickups (repair / overcharge / mine restock). Elites (heavy+) roll a salvage drop.
 - **Schematic cache** (one, deep and far): first opening permanently unlocks the **mine
@@ -98,7 +98,7 @@ determinism green.
 **Accept:** a run can find, earn, and use mines; unlock survives across runs and slots; all
 tests green.
 
-### ☐ B6 — New enemy roles: lancer, mortar section, sapper *(sim, content, view)*
+### ✅ B6 — New enemy roles: lancer, mortar section, sapper *(sim, content, view)*
 - **Lancer**: telegraphed line charge, long vulnerable recovery (phase-step/dodge check).
 - **Mortar section**: emplaced spawner that fires scheduled barrages (B2's event tech, now
   killable on the map — walking to it is a tactical objective).
@@ -106,7 +106,7 @@ tests green.
 - Wave/script data extended so roles appear on the authored timeline.
 **Accept:** each new type creates a distinct decision; wave 4+ mixes roles; tests green.
 
-### ☐ B7 — Knowledge layers: schedule sense + death sense *(view/meta only)*
+### ✅ B7 — Knowledge layers: schedule sense + death sense *(view/meta only)*
 - **Schedule sense**: waves you have survived before show a pre-wave banner (composition +
   entry edges). Per-slot in `RunMeta`.
 - **Death sense**: enemy types that have killed you render their telegraphs earlier and
@@ -114,7 +114,7 @@ tests green.
 - Death panel names what this death taught (string additions, reveal-linted).
 **Accept:** a veteran's screen visibly out-informs a rookie's on the same seed; sim untouched.
 
-### ☐ B8 — Decoy echo + enemy targeting *(sim, content, view)*
+### ✅ B8 — Decoy echo + enemy targeting *(sim, content, view)*
 - Enemies target "nearest attention object" (player or decoy) instead of hardcoded player —
   the multi-body seam Path B needs, cut here.
 - **Decoy echo** ability (`Command.decoy`, cooldown + charge): static afterimage with HP that

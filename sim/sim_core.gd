@@ -76,6 +76,10 @@ var _mine: Dictionary
 ## Whether this loadout can hold mines at all (drop tables adapt).
 var _mines_enabled: bool = false
 
+# Afterimage decoy tuning (tuning.json) and whether the loadout unlocks it.
+var _decoy: Dictionary
+var _decoy_enabled: bool = false
+
 # From the loadout: extra fragments stripped per kill (Exfiltration branch).
 var _kill_fragment_add: int = 0
 
@@ -156,6 +160,9 @@ func setup(seed_value: int, loadout: Dictionary = {}) -> void:
 	state.mine_stock = int(loadout.get("mine_stock", 0))
 	_mines_enabled = state.mine_stock > 0
 
+	_decoy = tuning.get("decoy", {})
+	_decoy_enabled = int(loadout.get("decoy_unlock", 0)) > 0
+
 	var fixtures: Dictionary = _load_json(FIXTURES_PATH)
 	_supply_cfg = fixtures["supply_cache"]
 	_schematic_cfg = fixtures["schematic_cache"]
@@ -176,6 +183,7 @@ func step(cmd: SimCommand) -> void:
 		_step_enemy_projectiles()
 		_step_impacts()
 		_step_mines()
+		_step_decoys()
 		_step_pickups()
 		_cull_dead_enemies()
 	state.tick += 1
@@ -230,6 +238,18 @@ func _step_player(cmd: SimCommand) -> void:
 		state.mines.append(m)
 		state.mine_stock -= 1
 		state.mine_cooldown = int(_mine["place_cooldown_ticks"])
+
+	if state.decoy_cooldown > 0:
+		state.decoy_cooldown -= 1
+	if cmd.decoy and _decoy_enabled and state.decoy_cooldown == 0:
+		# One afterimage at a time: replanting moves it.
+		state.decoys.clear()
+		var d := State.Decoy.new()
+		d.pos = state.player_pos
+		d.hp = int(_decoy["hp"])
+		d.ttl = int(_decoy["ttl_ticks"])
+		state.decoys.append(d)
+		state.decoy_cooldown = int(_decoy["cooldown_ticks"])
 
 
 ## Fire cooldown after overcharge salvage: each stack scales it down.
@@ -395,6 +415,9 @@ func _step_impacts() -> void:
 		for e: State.Enemy in state.enemies:
 			if e.hp > 0 and _circles_hit(imp.pos, imp.radius, e.pos, _stat_f(e.type, "radius")):
 				e.hp -= imp.damage
+		for d: State.Decoy in state.decoys:
+			if _circles_hit(imp.pos, imp.radius, d.pos, float(_decoy["radius"])):
+				d.hp -= imp.damage
 		var block_damage := int(_artillery["block_damage"])
 		for b: State.Block in state.blocks:
 			if _circle_hits_aabb(imp.pos, imp.radius, b.pos, b.size):
@@ -505,6 +528,18 @@ func _step_mines() -> void:
 	state.mines = remaining
 
 
+## Afterimages fade on their own clock or break under fire.
+func _step_decoys() -> void:
+	if state.decoys.is_empty():
+		return
+	var remaining: Array[State.Decoy] = []
+	for d: State.Decoy in state.decoys:
+		d.ttl -= 1
+		if d.ttl > 0 and d.hp > 0:
+			remaining.append(d)
+	state.decoys = remaining
+
+
 ## Salvage decays if ignored and applies on contact.
 func _step_pickups() -> void:
 	if state.pickups.is_empty():
@@ -559,10 +594,26 @@ func _step_spawns() -> void:
 		state.enemies.append(e)
 
 
+## The multi-body seam: enemies pursue "attention objects" — today the
+## player and any afterimage decoy; later, echoes and allies join the same
+## list. Returns {pos, vel, is_player} for the nearest one.
+func _nearest_attention(from: Vector2) -> Dictionary:
+	var best := {
+		"pos": state.player_pos, "vel": state.player_vel, "is_player": true}
+	var best_d := from.distance_squared_to(state.player_pos)
+	for d: State.Decoy in state.decoys:
+		var dd := from.distance_squared_to(d.pos)
+		if dd < best_d:
+			best_d = dd
+			best = {"pos": d.pos, "vel": Vector2.ZERO, "is_player": false}
+	return best
+
+
 func _step_enemies() -> void:
 	for e: State.Enemy in state.enemies:
 		var radius := _stat_f(e.type, "radius")
-		var to_player := state.player_pos - e.pos
+		var target: Dictionary = _nearest_attention(e.pos)
+		var to_player: Vector2 = target["pos"] - e.pos
 		var dist := to_player.length()
 		var dir := to_player / dist if dist > 0.001 else Vector2.DOWN
 
@@ -598,6 +649,12 @@ func _step_enemies() -> void:
 				contact = _stat_i(e.type, "charge_damage")
 			_damage_player(contact, e.type)
 			e.contact_cooldown = _stat_i(e.type, "contact_cooldown_ticks")
+		else:
+			for d: State.Decoy in state.decoys:
+				if _circles_hit(e.pos, radius, d.pos, float(_decoy["radius"])):
+					d.hp -= _stat_i(e.type, "contact_damage")
+					e.contact_cooldown = _stat_i(e.type, "contact_cooldown_ticks")
+					break
 
 
 ## Roaming: behavior-specific approach movement, plus watching for the moment
@@ -621,10 +678,12 @@ func _step_roam(e: State.Enemy, dir: Vector2, dist: float) -> void:
 				advance = 0.0
 			e.vel = dir * speed * advance
 			if e.fire_cooldown == 0 and dist <= preferred * 1.15:
-				# Lead the shot: lock aim at where the player will be if they
-				# keep moving — standing still or changing course both work.
+				# Lead the shot: lock aim at where the target will be if it
+				# keeps moving — standing still or changing course both work.
 				var lead := float(_stat_i(e.type, "lead_ticks")) * DT
-				var aim := state.player_pos + state.player_vel * lead - e.pos
+				var target: Dictionary = _nearest_attention(e.pos)
+				var aim: Vector2 = \
+					target["pos"] + (target["vel"] as Vector2) * lead - e.pos
 				_begin_windup(e, aim.normalized() if aim.length() > 0.001 else dir)
 		"slammer":
 			e.vel = dir * speed
@@ -653,13 +712,15 @@ func _step_roam(e: State.Enemy, dir: Vector2, dist: float) -> void:
 				if e.fire_cooldown == 0 and dist <= 70.0:
 					_begin_windup(e, dir)
 		"mortar":
-			# Emplaced: never moves, registers fire on the player's predicted
+			# Emplaced: never moves, registers fire on its target's predicted
 			# position, and calls shells in — killable artillery.
 			e.vel = Vector2.ZERO
 			if e.fire_cooldown == 0:
 				var lead := float(_stat_i(e.type, "lead_ticks")) * DT
+				var target: Dictionary = _nearest_attention(e.pos)
 				# attack_dir doubles as the registered target *position*.
-				_begin_windup(e, state.player_pos + state.player_vel * lead)
+				_begin_windup(
+					e, target["pos"] + (target["vel"] as Vector2) * lead)
 		_:
 			e.vel = dir * speed
 
@@ -849,6 +910,12 @@ func _step_enemy_projectiles() -> void:
 		if not hit and _circles_hit(p.pos, projectile_radius, state.player_pos, player_radius):
 			_damage_player(p.damage, "infantry")
 			hit = true
+		if not hit:
+			for d: State.Decoy in state.decoys:
+				if _circles_hit(p.pos, projectile_radius, d.pos, float(_decoy["radius"])):
+					d.hp -= p.damage
+					hit = true
+					break
 		if not hit:
 			survivors.append(p)
 	state.enemy_projectiles = survivors

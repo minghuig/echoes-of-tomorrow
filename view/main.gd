@@ -135,6 +135,8 @@ var _win_fragment_target: int = 0
 var _mine_base_stock: int = 0
 ## Schematic ids recovered by the most recent banked run (death panel line).
 var _fresh_schematics: Array = []
+## Decoy count last view tick (plant/break feedback).
+var _pre_decoy_count: int = 0
 
 # The sentience tree (content/sentience_tree.json) and Between UI state.
 var _tree: Array = []
@@ -447,6 +449,8 @@ func _update_camera() -> void:
 	_overlay.mines_unlocked = _meta.schematics.has("mine_dispenser")
 	_overlay.fresh_schematics = _fresh_schematics
 	_overlay.banner_composition = _banner_composition
+	_overlay.decoy_unlocked = _run_loadout.get("decoy_unlock", 0) > 0
+	_overlay.decoy_ready = _core.state.decoy_cooldown == 0
 	_overlay.death_cause = SOURCE_NAMES.get(
 		_core.state.last_damage_source, _core.state.last_damage_source.to_upper())
 	_world.death_sense = _meta.killed_by
@@ -734,6 +738,7 @@ func _start_run() -> void:
 	_run_banked = false
 	_fresh_intel = []
 	_fresh_schematics = []
+	_pre_decoy_count = 0
 	_proj_prev.clear()
 	_proj_trails.clear()
 	if _fx != null:
@@ -966,6 +971,15 @@ func _emit_fixture_events(
 			_shake = maxf(_shake, SHAKE_DESTROY)
 			_sfx_break.play()
 
+	# Decoys: a burst when planted, static collapse when broken/expired.
+	if state.decoys.size() > _pre_decoy_count:
+		for d: SimStateScript.Decoy in state.decoys:
+			_fx.dodge_burst(d.pos, Vector2.UP)
+		_sfx_buy.play()
+	elif state.decoys.size() < _pre_decoy_count:
+		_sfx_enemy_hit.play()
+	_pre_decoy_count = state.decoys.size()
+
 
 ## Diff the projectile set to spawn muzzle flashes (on new bolts), recoil, and
 ## impact sparks + trail ghosts (on removed bolts).
@@ -1083,6 +1097,7 @@ func _build_command() -> SimCommand:
 	cmd.fire = Input.is_action_pressed("fire")
 	cmd.dodge = Input.is_action_just_pressed("dodge")
 	cmd.place_mine = Input.is_action_just_pressed("mine")
+	cmd.decoy = Input.is_action_just_pressed("decoy")
 
 	# On touch devices the browser emulates a mouse from touches, which
 	# would fight the virtual stick — so touch replaces pointer input

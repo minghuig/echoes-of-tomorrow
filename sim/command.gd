@@ -10,3 +10,5 @@ var fire: bool = false
 var dodge: bool = false
 ## Drop a proximity mine at the player's feet (needs stock; see mine tuning).
 var place_mine: bool = false
+## Plant an afterimage decoy that draws enemy attention (Cognition unlock).
+var decoy: bool = false

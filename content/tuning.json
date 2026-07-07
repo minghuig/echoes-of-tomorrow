@@ -31,6 +31,12 @@
 	"rubble": {
 		"slow": 0.75
 	},
+	"decoy": {
+		"radius": 14.0,
+		"hp": 30,
+		"ttl_ticks": 480,
+		"cooldown_ticks": 600
+	},
 	"mine": {
 		"radius": 8.0,
 		"trigger_radius": 42.0,

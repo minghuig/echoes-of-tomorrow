@@ -81,6 +81,13 @@ class Mine extends RefCounted:
 	var pos: Vector2 = Vector2.ZERO
 	var arm_ticks: int = 0
 
+## An afterimage decoy: a stationary attention object enemies treat as a
+## target. Takes real damage (contact, fire, artillery) and expires.
+class Decoy extends RefCounted:
+	var pos: Vector2 = Vector2.ZERO
+	var hp: int = 0
+	var ttl: int = 0
+
 var tick: int = 0
 
 var player_pos: Vector2 = Vector2.ZERO
@@ -117,6 +124,8 @@ var rubble: Array[Rubble] = []
 var caches: Array[Cache] = []
 var pickups: Array[Pickup] = []
 var mines: Array[Mine] = []
+var decoys: Array[Decoy] = []
+var decoy_cooldown: int = 0
 
 ## Mine dispenser state (stock comes from the loadout; pickups restock it).
 var mine_stock: int = 0
@@ -207,6 +216,12 @@ func serialize() -> PackedByteArray:
 	for m: Mine in mines:
 		_put_vec2(buf, m.pos)
 		buf.put_32(m.arm_ticks)
+	buf.put_u32(decoys.size())
+	for d: Decoy in decoys:
+		_put_vec2(buf, d.pos)
+		buf.put_32(d.hp)
+		buf.put_32(d.ttl)
+	buf.put_32(decoy_cooldown)
 	buf.put_32(mine_stock)
 	buf.put_32(mine_cooldown)
 	buf.put_32(overcharge_stacks)

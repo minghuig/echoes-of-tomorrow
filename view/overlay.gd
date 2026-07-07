@@ -75,6 +75,9 @@ var mines_unlocked: bool = false
 var fresh_schematics: Array = []
 ## Schedule sense: known-wave composition line ("" when unknown).
 var banner_composition: String = ""
+## Afterimage decoy HUD state.
+var decoy_unlocked: bool = false
+var decoy_ready: bool = false
 ## Display name of what caused the current death ("" while alive).
 var death_cause: String = ""
 ## Which button hints to draw: pushed in by main.gd from the last raw input
@@ -257,6 +260,14 @@ func _draw_hud(screen: Vector2) -> void:
 		for i in mine_stock:
 			draw_circle(
 				Vector2(110.0 + i * 14.0, 96.0), 4.0, Color(COLOR_DOWN_TEXT, 0.85))
+
+	# Afterimage readiness (Cognition unlock).
+	if decoy_unlocked:
+		var decoy_hint := "[RB]" if using_gamepad else "[C]"
+		draw_string(
+			font, Vector2(24.0, 116.0), "%s AFTERIMAGE" % decoy_hint,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
+			Color(COLOR_AIM, 0.75) if decoy_ready else Color(COLOR_HUD_TEXT, 0.3))
 
 	# Run stats, top-right.
 	var right := screen.x - 24.0
