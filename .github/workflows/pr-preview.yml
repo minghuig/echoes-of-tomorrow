@@ -3,9 +3,9 @@ name: PR Preview
 # Publishes playable web builds to the gh-pages branch:
 #   pull requests  -> pr/<number>/   (link upserted as a PR comment)
 #   pushes to main -> latest/
-# Serving needs GitHub Pages enabled once (Settings -> Pages -> Deploy from
-# a branch -> gh-pages, / root). Until then the branch still updates and
-# every link goes live the moment Pages is switched on.
+# The deploy job enables GitHub Pages (source: gh-pages branch, / root)
+# automatically via the REST API, so no manual Settings toggle is needed;
+# the "Ensure GitHub Pages serves gh-pages" step is idempotent.
 #
 # Notes:
 # - The web export has thread_support disabled, so no cross-origin
@@ -26,6 +26,7 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  pages: write
 
 jobs:
   build:
@@ -77,6 +78,34 @@ jobs:
           destination_dir: ${{ github.event_name == 'push' && 'latest' || format('pr/{0}', github.event.number) }}
           commit_message: "deploy: ${{ github.event_name == 'push' && 'latest' || format('pr/{0}', github.event.number) }} @ ${{ github.sha }}"
 
+      # Without this, the build lands on gh-pages but Pages never serves it,
+      # so every preview link 404s until someone flips Settings -> Pages by
+      # hand. Enable (or repoint) Pages at the gh-pages branch root on every
+      # deploy so the links just work. Idempotent; never fails the deploy.
+      - name: Ensure GitHub Pages serves gh-pages
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const source = { branch: 'gh-pages', path: '/' };
+            try {
+              const { data } = await github.rest.repos.getPages({ ...context.repo });
+              const cur = data.source || {};
+              if (cur.branch !== source.branch || cur.path !== source.path) {
+                await github.rest.repos.updateInformationAboutPagesSite({ ...context.repo, source });
+                core.info(`Repointed Pages to ${source.branch}${source.path}`);
+              } else {
+                core.info('Pages already serving gh-pages/');
+              }
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.repos.createPagesSite({ ...context.repo, source });
+                core.info('Enabled Pages from gh-pages/');
+              } else {
+                core.warning(`Could not configure Pages: ${e.status} ${e.message}`);
+              }
+            }
+
       - name: Comment preview link on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
@@ -90,7 +119,7 @@ jobs:
               '',
               `Updated for ${context.payload.pull_request.head.sha}.`,
               '',
-              '_Needs GitHub Pages enabled once (Settings → Pages → deploy from `gh-pages`).',
+              '_First deploy can take a minute for Pages to go live.',
               'Touch controls appear automatically on phones and tablets._',
             ].join('\n');
             const { data: comments } = await github.rest.issues.listComments({
