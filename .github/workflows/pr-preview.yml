@@ -52,6 +52,13 @@ jobs:
           mkdir -p build/web
           godot --headless --path . --export-release "Web" build/web/index.html
 
+      # Music is excluded from the pck (export_presets exclude_filter) and
+      # streamed on demand by view/music.gd — ship the mp3s beside index.html.
+      - name: Stage streamed audio
+        run: |
+          mkdir -p build/web/audio
+          cp assets/music/*.mp3 build/web/audio/
+
       - name: Upload preview build
         uses: actions/upload-artifact@v4
         with:

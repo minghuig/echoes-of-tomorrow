@@ -128,11 +128,9 @@ var _last_run: RunRecord = null
 ## Boot into the title screen; deploying from it drops into the run that
 ## _ready already primed at tick 0.
 var _mode: Mode = Mode.TITLE
-## Crossfading music bed plus the two authored loops it segues between; other
-## scenes (beach, credits) have no track yet and fade to silence.
+## Crossfading music bed. Tracks are referenced by key (registered in _ready)
+## and loaded on demand — streamed in on web so the pck ships without audio.
 var _music: MusicScript
-var _title_music: AudioStream
-var _between_music: AudioStream
 ## Which mode Pause was entered from (Playing or Between), so resuming
 ## returns to the right screen.
 var _mode_before_pause: Mode = Mode.PLAYING
@@ -263,13 +261,13 @@ func _ready() -> void:
 
 	_music = MusicScript.new()
 	add_child(_music)
-	_title_music = load("res://assets/music/title_theme.mp3")
-	_between_music = load("res://assets/music/between_theme.mp3")
-	# Both beds loop; the crossfader handles the segues between scenes.
-	if _title_music is AudioStreamMP3:
-		(_title_music as AudioStreamMP3).loop = true
-	if _between_music is AudioStreamMP3:
-		(_between_music as AudioStreamMP3).loop = true
+	# Register the beds by key; the node loads them on demand (streamed on web)
+	# and the crossfader segues between them as the scene changes.
+	_music.request_tracks({
+		"title": "title_theme.mp3",
+		"battle": "battle_theme.mp3",
+		"between": "between_theme.mp3",
+	})
 
 	# Wire the render nodes. References that outlive a run are set once here;
 	# the per-run SimCore is (re)pointed in _start_run().
@@ -508,11 +506,13 @@ func _apply_music() -> void:
 	var effective := _mode_before_pause if _mode == Mode.PAUSED else _mode
 	match effective:
 		Mode.TITLE:
-			_music.play_track(_title_music)
+			_music.play_track("title")
+		Mode.PLAYING:
+			_music.play_track("battle")
 		Mode.BETWEEN:
-			_music.play_track(_between_music)
+			_music.play_track("between")
 		_:
-			# Beach and credits have no authored bed yet — fall to silence.
+			# Credits have no authored bed yet — fall to silence.
 			_music.stop()
 
 
