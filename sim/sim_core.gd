@@ -332,6 +332,14 @@ func _fire_event(event: Dictionary) -> void:
 			_fire_barrage(int(event["count"]), event.get("zone", _artillery["zone"]))
 		"flank":
 			_fire_flank(String(event["edge"]), event["comp"])
+		"mortar":
+			# An emplacement digs in at an authored position — killable
+			# artillery, and a reason to cross the map.
+			var s := State.PendingSpawn.new()
+			s.tick = state.tick
+			s.type = "mortar"
+			s.pos = Vector2(event["x"], event["y"])
+			state.pending_spawns.append(s)
 
 
 ## Schedule `count` shells over `zone`, staggered so the barrage rolls across
@@ -582,7 +590,11 @@ func _step_enemies() -> void:
 		if e.contact_cooldown > 0:
 			e.contact_cooldown -= 1
 		elif _circles_hit(e.pos, radius, state.player_pos, player_radius):
-			_damage_player(_stat_i(e.type, "contact_damage"))
+			# A committed lancer hits with the charge, not the shoulder-bump.
+			var contact := _stat_i(e.type, "contact_damage")
+			if e.phase == PHASE_COMMIT and _stat_s(e.type, "behavior") == "lancer":
+				contact = _stat_i(e.type, "charge_damage")
+			_damage_player(contact)
 			e.contact_cooldown = _stat_i(e.type, "contact_cooldown_ticks")
 
 
@@ -616,6 +628,36 @@ func _step_roam(e: State.Enemy, dir: Vector2, dist: float) -> void:
 			e.vel = dir * speed
 			if e.fire_cooldown == 0 and dist <= _stat_f(e.type, "slam_range"):
 				_begin_windup(e, dir)
+		"lancer":
+			e.vel = dir * speed
+			if e.fire_cooldown == 0 and dist <= _stat_f(e.type, "charge_range"):
+				_begin_windup(e, dir)
+		"sapper":
+			# Sappers attack the terrain plan: head for the nearest standing
+			# cover and blow a breach. Only without targets do they turn on
+			# the player.
+			var target_block := _nearest_block(e.pos)
+			if target_block != null:
+				var center: Vector2 = target_block.pos + target_block.size * 0.5
+				var to_block := center - e.pos
+				e.vel = to_block.normalized() * speed if to_block.length() > 0.001 \
+					else Vector2.ZERO
+				if e.fire_cooldown == 0 and _circle_hits_aabb(
+						e.pos, _stat_f(e.type, "radius") + 10.0,
+						target_block.pos, target_block.size):
+					_begin_windup(e, to_block.normalized())
+			else:
+				e.vel = dir * speed
+				if e.fire_cooldown == 0 and dist <= 70.0:
+					_begin_windup(e, dir)
+		"mortar":
+			# Emplaced: never moves, registers fire on the player's predicted
+			# position, and calls shells in — killable artillery.
+			e.vel = Vector2.ZERO
+			if e.fire_cooldown == 0:
+				var lead := float(_stat_i(e.type, "lead_ticks")) * DT
+				# attack_dir doubles as the registered target *position*.
+				_begin_windup(e, state.player_pos + state.player_vel * lead)
 		_:
 			e.vel = dir * speed
 
@@ -644,6 +686,13 @@ func _step_windup(e: State.Enemy) -> void:
 			_fire_volley_shot(e)
 		"slammer":
 			_resolve_slam(e)
+		"lancer":
+			e.phase = PHASE_COMMIT
+			e.phase_ticks = _stat_i(e.type, "charge_ticks")
+		"sapper":
+			_detonate_sapper(e)
+		"mortar":
+			_fire_mortar(e)
 
 
 func _step_commit(e: State.Enemy) -> void:
@@ -661,6 +710,11 @@ func _step_commit(e: State.Enemy) -> void:
 					_fire_volley_shot(e)
 				else:
 					_begin_recover(e)
+		"lancer":
+			e.vel = e.attack_dir * _stat_f(e.type, "charge_speed")
+			e.phase_ticks -= 1
+			if e.phase_ticks <= 0:
+				_begin_recover(e)
 		_:
 			_begin_recover(e)
 
@@ -683,6 +737,52 @@ func _fire_volley_shot(e: State.Enemy) -> void:
 	state.enemy_projectiles.append(p)
 	e.shots_left -= 1
 	e.phase_ticks = _stat_i(e.type, "shot_gap_ticks")
+
+
+func _nearest_block(pos: Vector2) -> State.Block:
+	var best: State.Block = null
+	var best_d := INF
+	for b: State.Block in state.blocks:
+		var d := pos.distance_squared_to(b.pos + b.size * 0.5)
+		if d < best_d:
+			best_d = d
+			best = b
+	return best
+
+
+## The sapper's breach charge: heavy damage to cover in the blast, real
+## damage to a player caught next to it, and the sapper goes with it.
+func _detonate_sapper(e: State.Enemy) -> void:
+	var blast := _stat_f(e.type, "blast_radius")
+	var breach := _stat_i(e.type, "breach_damage")
+	for b: State.Block in state.blocks:
+		if _circle_hits_aabb(e.pos, blast, b.pos, b.size):
+			b.hp -= breach
+	if _circles_hit(e.pos, blast, state.player_pos, player_radius):
+		_damage_player(_stat_i(e.type, "player_damage"))
+	_settle_blocks()
+	e.hp = 0
+
+
+## The emplacement registers shells on its locked target position
+## (attack_dir doubles as a position for mortars). Shells are standard
+## artillery impacts — same telegraph, damage, and crater.
+func _fire_mortar(e: State.Enemy) -> void:
+	var telegraph := int(_artillery["telegraph_ticks"])
+	var jitter := _stat_f(e.type, "shell_jitter")
+	var gap := _stat_i(e.type, "shell_gap_ticks")
+	for i in _stat_i(e.type, "shells"):
+		var imp := State.Impact.new()
+		imp.pos = e.attack_dir + Vector2(
+			rng.randf_range(-jitter, jitter), rng.randf_range(-jitter, jitter))
+		imp.pos.x = clampf(imp.pos.x, 40.0, state.arena_size.x - 40.0)
+		imp.pos.y = clampf(imp.pos.y, 40.0, state.arena_size.y - 40.0)
+		imp.land_tick = state.tick + telegraph + i * gap
+		imp.radius = float(_artillery["radius"])
+		imp.damage = int(_artillery["damage"])
+		imp.crater_radius = float(_artillery["crater_radius"])
+		state.pending_impacts.append(imp)
+	_begin_recover(e)
 
 
 ## The slam lands the tick its windup ends: AoE damage + knockback to the

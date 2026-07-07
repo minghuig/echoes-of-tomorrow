@@ -26,6 +26,9 @@ const COLOR_CRACK := Color("0e0c18")
 const COLOR_DRONE := Color("ff8c5a")
 const COLOR_INFANTRY := Color("e05e51")
 const COLOR_HEAVY := Color("ff7a4f")
+const COLOR_LANCER := Color("ff6fa5")
+const COLOR_SAPPER := Color("b8e05a")
+const COLOR_MORTAR := Color("d98c4a")
 const COLOR_CACHE := Color("ffd75e")
 const COLOR_SCHEMATIC := Color("6ff2f6")
 const COLOR_REPAIR := Color("6ee08a")
@@ -303,6 +306,16 @@ func _draw_enemies(state: SimStateScript) -> void:
 				_draw_enemy_drone(e.pos, radius, strength, toward)
 			"infantry":
 				_draw_enemy_infantry(e.pos, radius, strength, toward, e)
+			"lancer":
+				if e.phase == SimCoreScript.PHASE_COMMIT:
+					draw_line(
+						e.pos - e.attack_dir * 40.0, e.pos,
+						Color(COLOR_LANCER, 0.55), 5.0)
+				_draw_enemy_lancer(e.pos, radius, strength, toward)
+			"sapper":
+				_draw_enemy_sapper(e.pos, radius, strength, toward)
+			"mortar":
+				_draw_enemy_mortar(e.pos, radius, strength)
 			_:
 				_draw_enemy_heavy(e.pos, radius, strength, toward)
 
@@ -349,6 +362,36 @@ func _draw_telegraph(e: SimStateScript.Enemy) -> void:
 			draw_arc(
 				e.pos, r, 0.0, TAU, 48,
 				Color(color, (0.22 + 0.55 * t) * flash), 2.0 + 3.5 * t)
+		"lancer":
+			var reach: float = (
+				float(stats["charge_speed"]) * float(stats["charge_ticks"])
+				* SimCoreScript.DT + radius * 2.0)
+			var to := e.pos + e.attack_dir * reach
+			draw_line(e.pos, to, Color(color, (0.12 + 0.42 * t) * flash), 4.0)
+			var perp := e.attack_dir.orthogonal() * 8.0
+			var base := to - e.attack_dir * 14.0
+			draw_colored_polygon(
+				PackedVector2Array([to, base + perp, base - perp]),
+				Color(color, (0.3 + 0.6 * t) * flash))
+		"sapper":
+			var r: float = stats["blast_radius"]
+			draw_circle(e.pos, r * t, Color(color, 0.12 * flash))
+			draw_arc(
+				e.pos, r, 0.0, TAU, 40,
+				Color(color, (0.25 + 0.6 * t) * flash), 2.0 + 3.0 * t)
+		"mortar":
+			# attack_dir is the registered target position: crosshair there.
+			var target: Vector2 = e.attack_dir
+			var s := 14.0 + 8.0 * (1.0 - t)
+			draw_arc(target, s, 0.0, TAU, 24, Color(color, (0.3 + 0.5 * t) * flash), 2.0)
+			draw_line(
+				target + Vector2(-s - 6.0, 0.0), target + Vector2(s + 6.0, 0.0),
+				Color(color, 0.5 * flash), 1.5)
+			draw_line(
+				target + Vector2(0.0, -s - 6.0), target + Vector2(0.0, s + 6.0),
+				Color(color, 0.5 * flash), 1.5)
+			draw_line(
+				e.pos, target, Color(color, 0.10 * flash), 1.0)
 
 
 func _draw_enemy_drone(pos: Vector2, radius: float, strength: float, toward: Vector2) -> void:
@@ -399,6 +442,55 @@ func _draw_enemy_heavy(pos: Vector2, radius: float, strength: float, toward: Vec
 	var pulse := 0.5 + 0.5 * sin(_time * 4.0 + pos.x)
 	draw_circle(pos, radius * 0.28, Color(COLOR_ENEMY_PROJ, 0.4 + 0.4 * pulse))
 	draw_line(pos + toward * (radius * 0.55), pos + toward * (radius + 4.0), COLOR_HEAVY, 3.0)
+
+
+## A blade of a unit: elongated dart aimed down its threat axis.
+func _draw_enemy_lancer(
+	pos: Vector2, radius: float, strength: float, toward: Vector2
+) -> void:
+	var fill := COLOR_LANCER.lerp(COLOR_BG, (1.0 - strength) * 0.7)
+	var perp := toward.orthogonal()
+	var pts := PackedVector2Array([
+		pos + toward * (radius + 8.0),
+		pos - toward * radius + perp * radius * 0.7,
+		pos - toward * radius * 0.5,
+		pos - toward * radius - perp * radius * 0.7,
+	])
+	draw_circle(pos, radius + 4.0, Color(COLOR_LANCER, 0.07))
+	draw_colored_polygon(pts, fill)
+	draw_polyline(pts + PackedVector2Array([pts[0]]), Color(COLOR_LANCER, 0.95), 2.0)
+
+
+## The demolitionist: small diamond with a strobing charge pack. It wants
+## your walls, not you.
+func _draw_enemy_sapper(
+	pos: Vector2, radius: float, strength: float, toward: Vector2
+) -> void:
+	var fill := COLOR_SAPPER.lerp(COLOR_BG, (1.0 - strength) * 0.7)
+	var pts := PackedVector2Array([
+		pos + Vector2(0.0, -radius), pos + Vector2(radius, 0.0),
+		pos + Vector2(0.0, radius), pos + Vector2(-radius, 0.0)])
+	draw_circle(pos, radius + 4.0, Color(COLOR_SAPPER, 0.07))
+	draw_colored_polygon(pts, fill)
+	draw_polyline(pts + PackedVector2Array([pts[0]]), Color(COLOR_SAPPER, 0.9), 1.5)
+	var strobe := 0.4 + 0.6 * absf(sin(_time * 9.0 + pos.x))
+	draw_circle(pos, radius * 0.3, Color(COLOR_TELEGRAPH, strobe))
+	draw_line(pos, pos + toward * (radius + 5.0), Color(COLOR_SAPPER, 0.6), 2.0)
+
+
+## The dug-in emplacement: base plate, ring, elevated tube. Doesn't move;
+## dies where it stands.
+func _draw_enemy_mortar(pos: Vector2, radius: float, strength: float) -> void:
+	var fill := COLOR_MORTAR.lerp(COLOR_BG, (1.0 - strength) * 0.6)
+	var half := Vector2(radius + 6.0, radius * 0.5)
+	draw_rect(Rect2(pos - Vector2(half.x, -radius * 0.4), Vector2(half.x * 2.0, 6.0)),
+		Color(COLOR_MORTAR, 0.5))
+	draw_circle(pos, radius + 5.0, Color(COLOR_MORTAR, 0.07))
+	draw_circle(pos, radius, fill)
+	draw_arc(pos, radius, 0.0, TAU, 28, Color(COLOR_MORTAR, 0.95), 2.5)
+	# The tube, angled up-field.
+	draw_line(pos, pos + Vector2(0.0, -radius - 9.0), Color(COLOR_MORTAR, 0.9), 4.0)
+	draw_circle(pos + Vector2(0.0, -radius - 9.0), 3.0, Color(COLOR_TELEGRAPH, 0.7))
 
 
 func _draw_projectile(p: SimStateScript.Projectile) -> void:
