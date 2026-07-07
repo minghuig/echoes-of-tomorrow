@@ -103,6 +103,9 @@ const ENEMY_COLORS := {
 	"drone": Color("ff8c5a"),
 	"infantry": Color("e05e51"),
 	"heavy": Color("ff7a4f"),
+	"lancer": Color("ff6fa5"),
+	"sapper": Color("b8e05a"),
+	"mortar": Color("d98c4a"),
 }
 
 var _core: SimCoreScript
