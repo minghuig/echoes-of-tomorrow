@@ -19,6 +19,7 @@ const SimCommand := preload("res://sim/command.gd")
 const RunMetaScript := preload("res://view/run_meta.gd")
 const DisplaySettingsScript := preload("res://view/display_settings.gd")
 const SfxScript := preload("res://view/sfx.gd")
+const MusicScript := preload("res://view/music.gd")
 const TouchInputScript := preload("res://view/touch_input.gd")
 const BackgroundScript := preload("res://view/background.gd")
 const WorldScript := preload("res://view/world_renderer.gd")
@@ -33,9 +34,11 @@ class RunRecord extends RefCounted:
 	var command_log: Array[SimCommand] = []
 	var loadout: Dictionary = {}
 
-## View flow: normal play, paused (frozen mid-wave), the Between (sentience
-## tree, entered after every death), or the credits roll after the meta win.
-enum Mode { PLAYING, BETWEEN, CREDITS, PAUSED }
+## View flow: the title screen (boot lands here), normal play, paused (frozen
+## mid-wave), the Between (sentience tree, entered after every death), or the
+## credits roll after the meta win. TITLE is appended last on purpose: Overlay
+## mirrors these as int constants, so the existing 0..3 ids must not shift.
+enum Mode { PLAYING, BETWEEN, CREDITS, PAUSED, TITLE }
 
 const BASE_SEED: int = 7
 const STICK_AIM_DEADZONE: float = 0.35
@@ -122,7 +125,14 @@ var _run_seed: int = 0
 var _run_loadout: Dictionary = {}
 var _command_log: Array[SimCommand] = []
 var _last_run: RunRecord = null
-var _mode: Mode = Mode.PLAYING
+## Boot into the title screen; deploying from it drops into the run that
+## _ready already primed at tick 0.
+var _mode: Mode = Mode.TITLE
+## Crossfading music bed plus the two authored loops it segues between; other
+## scenes (beach, credits) have no track yet and fade to silence.
+var _music: MusicScript
+var _title_music: AudioStream
+var _between_music: AudioStream
 ## Which mode Pause was entered from (Playing or Between), so resuming
 ## returns to the right screen.
 var _mode_before_pause: Mode = Mode.PLAYING
@@ -251,6 +261,16 @@ func _ready() -> void:
 	_sfx_wave = _make_sfx_player(SfxScript.wave_horn(), -8.0)
 	_sfx_buy = _make_sfx_player(SfxScript.buy_blip(), -8.0)
 
+	_music = MusicScript.new()
+	add_child(_music)
+	_title_music = load("res://assets/music/title_theme.mp3")
+	_between_music = load("res://assets/music/between_theme.mp3")
+	# Both beds loop; the crossfader handles the segues between scenes.
+	if _title_music is AudioStreamMP3:
+		(_title_music as AudioStreamMP3).loop = true
+	if _between_music is AudioStreamMP3:
+		(_between_music as AudioStreamMP3).loop = true
+
 	# Wire the render nodes. References that outlive a run are set once here;
 	# the per-run SimCore is (re)pointed in _start_run().
 	_world.proj_trails = _proj_trails
@@ -294,6 +314,11 @@ func _make_sfx_player(stream: AudioStreamWAV, volume_db: float) -> AudioStreamPl
 
 
 func _physics_process(_delta: float) -> void:
+	if _mode == Mode.TITLE:
+		_process_title_input()
+		_present()
+		return
+
 	if _mode == Mode.PAUSED:
 		_process_paused_input()
 		_present()
@@ -469,6 +494,45 @@ func _update_camera() -> void:
 	_background.visible = playing
 	_world.visible = playing
 	_fx.visible = playing
+
+	_apply_music()
+
+
+## Pick the track for the current scene and let the crossfader segue to it.
+## Called every tick — play_track/stop are no-ops when already on the right
+## track, so this just guarantees a seamless fade whenever the mode changes.
+## Pause keeps whatever the underlying scene was playing (no ducking).
+func _apply_music() -> void:
+	if _music == null:
+		return
+	var effective := _mode_before_pause if _mode == Mode.PAUSED else _mode
+	match effective:
+		Mode.TITLE:
+			_music.play_track(_title_music)
+		Mode.BETWEEN:
+			_music.play_track(_between_music)
+		_:
+			# Beach and credits have no authored bed yet — fall to silence.
+			_music.stop()
+
+
+## Title screen: sit on the key art until the player asks to deploy, then drop
+## into the run _ready already primed at tick 0 (no new run is started, so the
+## seed the title was showing is the seed you play). The crossfader fades the
+## title bed out on the next _present.
+func _process_title_input() -> void:
+	if _title_deploy_pressed():
+		_mode = Mode.PLAYING
+
+
+## Any confirm-ish input deploys from the title: fire, the Between's buy key
+## (Space), reset/redeploy (R / B), pause/start, or a tap.
+func _title_deploy_pressed() -> bool:
+	return Input.is_action_just_pressed("fire") \
+		or Input.is_action_just_pressed("buy") \
+		or Input.is_action_just_pressed("reset") \
+		or Input.is_action_just_pressed("pause") \
+		or _consumed_tap()
 
 
 ## Enter the Pause screen from `from` (Playing or Between), focusing the top
